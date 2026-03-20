@@ -1,0 +1,51 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+*.sln.iml
+
+# NuGet packages
+**/packages/
+*.nupkg
+*.snupkg
+
+# Local test files
+*.test
+*.tmp
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# User-specific files
+*.userprefs
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# AssetRipper submodule build outputs (这些是子模块的构建输出，不应该提交)
+AssetRipper/Source/0Bins/
+AssetRipper/Source/*/bin/
+AssetRipper/Source/*/obj/
+
+# AssetRipperPatcher build outputs
+AssetRipperPatcher/bin/
+AssetRipperPatcher/obj/
