@@ -252,7 +252,7 @@ public static class SerializedExtensions
 
 	public static void Export(this ISerializedShaderRTBlendState _this, TextWriter writer, int index)
 	{
-		if (!_this.SrcBlendValue().IsOne() || !_this.DestBlendValue().IsZero() || !_this.SrcBlendAlphaValue().IsOne() || !_this.DestBlendAlphaValue().IsZero())
+		if (!_this.SrcBlendValue.IsOne() || !_this.DestBlendValue.IsZero() || !_this.SrcBlendAlphaValue.IsOne() || !_this.DestBlendAlphaValue.IsZero())
 		{
 			writer.WriteIndent(3);
 			writer.Write("Blend ");
@@ -260,14 +260,14 @@ public static class SerializedExtensions
 			{
 				writer.Write($"{index} ");
 			}
-			writer.Write($"{_this.SrcBlendValue()} {_this.DestBlendValue()}");
-			if (!_this.SrcBlendValue().IsOne() || !_this.DestBlendAlphaValue().IsZero())
+			writer.Write($"{_this.SrcBlendValue} {_this.DestBlendValue}");
+			if (!_this.SrcBlendValue.IsOne() || !_this.DestBlendAlphaValue.IsZero())
 			{
-				writer.Write($", {_this.SrcBlendAlphaValue()} {_this.DestBlendAlphaValue()}");
+				writer.Write($", {_this.SrcBlendAlphaValue} {_this.DestBlendAlphaValue}");
 			}
 			writer.Write('\n');
 		}
-		if (!_this.BlendOpValue().IsAdd() || !_this.BlendOpAlphaValue().IsAdd())
+		if (!_this.BlendOpValue.IsAdd() || !_this.BlendOpAlphaValue.IsAdd())
 		{
 			writer.WriteIndent(3);
 			writer.Write("BlendOp ");
@@ -275,38 +275,38 @@ public static class SerializedExtensions
 			{
 				writer.Write($"{index} ");
 			}
-			writer.Write(_this.BlendOpValue().ToString());
-			if (!_this.BlendOpAlphaValue().IsAdd())
+			writer.Write(_this.BlendOpValue.ToString());
+			if (!_this.BlendOpAlphaValue.IsAdd())
 			{
-				writer.Write($", {_this.BlendOpAlphaValue()}");
+				writer.Write($", {_this.BlendOpAlphaValue}");
 			}
 			writer.Write('\n');
 		}
-		if (_this.ColMaskValue().IsRBGA())
+		if (_this.ColMaskValue.IsRBGA())
 		{
 			return;
 		}
 		writer.WriteIndent(3);
 		writer.Write("ColorMask ");
-		if (_this.ColMaskValue().IsNone())
+		if (_this.ColMaskValue.IsNone())
 		{
 			writer.Write(0);
 		}
 		else
 		{
-			if (_this.ColMaskValue().IsRed())
+			if (_this.ColMaskValue.IsRed())
 			{
 				writer.Write('R');
 			}
-			if (_this.ColMaskValue().IsGreen())
+			if (_this.ColMaskValue.IsGreen())
 			{
 				writer.Write('G');
 			}
-			if (_this.ColMaskValue().IsBlue())
+			if (_this.ColMaskValue.IsBlue())
 			{
 				writer.Write('B');
 			}
-			if (_this.ColMaskValue().IsAlpha())
+			if (_this.ColMaskValue.IsAlpha())
 			{
 				writer.Write('A');
 			}
@@ -339,90 +339,90 @@ public static class SerializedExtensions
 		_this.RtBlend5.Export(writer, 5);
 		_this.RtBlend6.Export(writer, 6);
 		_this.RtBlend7.Export(writer, 7);
-		if (_this.AlphaToMaskValue())
+		if (_this.AlphaToMaskValue)
 		{
 			writer.WriteIndent(3);
 			writer.Write("AlphaToMask On\n");
 		}
-		if (!_this.ZClipValue().IsOn())
+		if (!_this.ZClipValue.IsOn())
 		{
 			writer.WriteIndent(3);
-			writer.Write($"ZClip {_this.ZClipValue()}\n");
+			writer.Write($"ZClip {_this.ZClipValue}\n");
 		}
-		if (!_this.ZTestValue().IsLEqual() && !_this.ZTestValue().IsNone())
+		if (!_this.ZTestValue.IsLEqual())
 		{
 			writer.WriteIndent(3);
-			writer.Write($"ZTest {_this.ZTestValue()}\n");
+			writer.Write($"ZTest {_this.ZTestValue}\n");
 		}
-		if (!_this.ZWriteValue().IsOn())
+		if (!_this.ZWriteValue.IsOn())
 		{
 			writer.WriteIndent(3);
-			writer.Write($"ZWrite {_this.ZWriteValue()}\n");
+			writer.Write($"ZWrite {_this.ZWriteValue}\n");
 		}
-		if (!_this.CullingValue().IsBack())
+		if (!_this.CullingValue.IsBack())
 		{
 			writer.WriteIndent(3);
-			writer.Write($"Cull {_this.CullingValue()}\n");
+			writer.Write($"Cull {_this.CullingValue}\n");
 		}
-		if (!_this.OffsetFactor.IsZero() || !_this.OffsetUnits.IsZero())
+		if (!_this.OffsetFactor.IsZero || !_this.OffsetUnits.IsZero)
 		{
 			writer.WriteIndent(3);
 			writer.Write($"Offset {_this.OffsetFactor.Value}, {_this.OffsetUnits.Value}\n");
 		}
-		if (!_this.StencilRef.IsZero() || !_this.StencilReadMask.IsMax() || !_this.StencilWriteMask.IsMax() || !_this.StencilOp.IsDefault() || !_this.StencilOpFront.IsDefault() || !_this.StencilOpBack.IsDefault())
+		if (!_this.StencilRef.IsZero || !_this.StencilReadMask.IsMax || !_this.StencilWriteMask.IsMax || !_this.StencilOp.IsDefault || !_this.StencilOpFront.IsDefault || !_this.StencilOpBack.IsDefault)
 		{
 			writer.WriteIndent(3);
 			writer.Write("Stencil {\n");
-			if (!_this.StencilRef.IsZero())
+			if (!_this.StencilRef.IsZero)
 			{
 				writer.WriteIndent(4);
 				writer.Write($"Ref {_this.StencilRef.Value}\n");
 			}
-			if (!_this.StencilReadMask.IsMax())
+			if (!_this.StencilReadMask.IsMax)
 			{
 				writer.WriteIndent(4);
 				writer.Write($"ReadMask {_this.StencilReadMask.Value}\n");
 			}
-			if (!_this.StencilWriteMask.IsMax())
+			if (!_this.StencilWriteMask.IsMax)
 			{
 				writer.WriteIndent(4);
 				writer.Write($"WriteMask {_this.StencilWriteMask.Value}\n");
 			}
-			if (!_this.StencilOp.IsDefault())
+			if (!_this.StencilOp.IsDefault)
 			{
 				_this.StencilOp.Export(writer, StencilType.Base);
 			}
-			if (!_this.StencilOpFront.IsDefault())
+			if (!_this.StencilOpFront.IsDefault)
 			{
 				_this.StencilOpFront.Export(writer, StencilType.Front);
 			}
-			if (!_this.StencilOpBack.IsDefault())
+			if (!_this.StencilOpBack.IsDefault)
 			{
 				_this.StencilOpBack.Export(writer, StencilType.Back);
 			}
 			writer.WriteIndent(3);
 			writer.Write("}\n");
 		}
-		if (!_this.FogModeValue().IsUnknown() || !_this.FogColor.IsZero() || !_this.FogDensity.IsZero() || !_this.FogStart.IsZero() || !_this.FogEnd.IsZero())
+		if (!_this.FogModeValue.IsUnknown() || !_this.FogColor.IsZero || !_this.FogDensity.IsZero || !_this.FogStart.IsZero || !_this.FogEnd.IsZero)
 		{
 			writer.WriteIndent(3);
 			writer.Write("Fog {\n");
-			if (!_this.FogModeValue().IsUnknown())
+			if (!_this.FogModeValue.IsUnknown())
 			{
 				writer.WriteIndent(4);
 				writer.Write($"Mode {_this.FogMode}\n");
 			}
-			if (!_this.FogColor.IsZero())
+			if (!_this.FogColor.IsZero)
 			{
 				writer.WriteIndent(4);
 				writer.Write($"Color ({_this.FogColor.X.Value.ToStringInvariant()},{_this.FogColor.Y.Value.ToStringInvariant()},{_this.FogColor.Z.Value.ToStringInvariant()},{_this.FogColor.W.Value.ToStringInvariant()})\n");
 			}
-			if (!_this.FogDensity.IsZero())
+			if (!_this.FogDensity.IsZero)
 			{
 				writer.WriteIndent(4);
 				writer.Write("Density " + _this.FogDensity.Value.ToStringInvariant() + "\n");
 			}
-			if (!_this.FogStart.IsZero() || !_this.FogEnd.IsZero())
+			if (!_this.FogStart.IsZero || !_this.FogEnd.IsZero)
 			{
 				writer.WriteIndent(4);
 				writer.Write($"Range {_this.FogStart.Value.ToStringInvariant()}, {_this.FogEnd.Value.ToStringInvariant()}\n");
@@ -433,7 +433,7 @@ public static class SerializedExtensions
 		if (_this.Lighting)
 		{
 			writer.WriteIndent(3);
-			writer.Write("Lighting " + _this.LightingValue() + "\n");
+			writer.Write("Lighting " + _this.LightingValue + "\n");
 		}
 		writer.WriteIndent(3);
 		writer.Write($"GpuProgramID {_this.GpuProgramID}\n");
@@ -442,20 +442,20 @@ public static class SerializedExtensions
 	public static void Export(this ISerializedStencilOp _this, TextWriter writer, StencilType type)
 	{
 		writer.WriteIndent(4);
-		if (_this.CompValue() == StencilComp.Disabled)
+		if (_this.CompValue == StencilComp.Disabled)
 		{
-			writer.Write($"Comp{type.ToSuffixString()} [{_this.CompValue()}]\n");
+			writer.Write($"Comp{type.ToSuffixString()} [{_this.CompValue}]\n");
 		}
 		else
 		{
-			writer.Write($"Comp{type.ToSuffixString()} {_this.CompValue()}\n");
+			writer.Write($"Comp{type.ToSuffixString()} {_this.CompValue}\n");
 		}
 		writer.WriteIndent(4);
-		writer.Write($"Pass{type.ToSuffixString()} {_this.PassValue()}\n");
+		writer.Write($"Pass{type.ToSuffixString()} {_this.PassValue}\n");
 		writer.WriteIndent(4);
-		writer.Write($"Fail{type.ToSuffixString()} {_this.FailValue()}\n");
+		writer.Write($"Fail{type.ToSuffixString()} {_this.FailValue}\n");
 		writer.WriteIndent(4);
-		writer.Write($"ZFail{type.ToSuffixString()} {_this.ZFailValue()}\n");
+		writer.Write($"ZFail{type.ToSuffixString()} {_this.ZFailValue}\n");
 	}
 
 	public static void Export(this ISerializedSubProgram _this, ShaderWriter writer, ShaderType type, bool isTier)

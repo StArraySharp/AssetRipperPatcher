@@ -49,3 +49,5 @@ AssetRipper/Source/*/obj/
 # AssetRipperPatcher build outputs
 AssetRipperPatcher/bin/
 AssetRipperPatcher/obj/
+
+publish
