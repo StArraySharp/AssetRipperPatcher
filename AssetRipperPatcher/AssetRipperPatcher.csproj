@@ -14,8 +14,44 @@
       <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     </ItemGroup>
 
+    <!-- Plugins/ holds Unity Editor scripts that go into an unpacked game
+         project's Assets/Editor after export.  They are payload, not program:
+         excluded from compilation and analysis (they reference UnityEditor,
+         which this project does not), and copied verbatim to the output so the
+         folder can be handed over as-is. -->
+    <ItemGroup>
+        <Compile Remove="Plugins\**\*.cs" />
+        <None Remove="Plugins\**" />
+        <Content Include="Plugins\**\*" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
     <ItemGroup>
       <ProjectReference Include="..\AssetRipper\Source\AssetRipper.GUI.Web\AssetRipper.GUI.Web.csproj" />
+      <!-- The decompiler library, referenced so the patcher can call it in-process
+           instead of spawning ShaderRipper.exe and reading files back. -->
+      <ProjectReference Include="..\..\ShaderRipper\src\ShaderRipper\ShaderRipper.csproj" />
     </ItemGroup>
+
+    <!-- Publish the library next to the patcher binary, so a build leaves a
+         drop-in `ShaderRipper.dll` (+ its pdb) in a fixed location that other
+         tooling can copy from. -->
+    <PropertyGroup>
+        <ShaderRipperLibDir>$(MSBuildThisFileDirectory)..\..\ShaderRipper\src\ShaderRipper\bin\$(Configuration)\$(TargetFramework)\</ShaderRipperLibDir>
+    </PropertyGroup>
+
+    <Target Name="CopyShaderRipperLibrary" AfterTargets="Build">
+        <ItemGroup>
+            <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.dll" />
+            <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.pdb" />
+        </ItemGroup>
+        <Warning Text="ShaderRipper.dll not found at $(ShaderRipperLibDir); build that project first."
+                 Condition="!Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Copy SourceFiles="@(ShaderRipperBin)"
+              DestinationFolder="$(OutDir)ShaderRipper"
+              SkipUnchangedFiles="true"
+              Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Message Importance="high" Text="ShaderRipper library -> $(OutDir)ShaderRipper"
+                 Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+    </Target>
 
 </Project>

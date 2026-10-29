@@ -51,3 +51,5 @@ AssetRipperPatcher/bin/
 AssetRipperPatcher/obj/
 
 publish
+# Local sandbox projects (not part of the build)
+.ignores/

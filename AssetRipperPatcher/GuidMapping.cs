@@ -170,7 +170,7 @@ public static class GuidMapping
         {
             guid = newGuid;
         }
-        else if (Program.IsUnity6 && UGUIFileIDAndGuid.TryGetValue(fileID, out var newGuid2))
+        else if (AppState.IsUnity6 && UGUIFileIDAndGuid.TryGetValue(fileID, out var newGuid2))
         {
             guid = newGuid2;
         }

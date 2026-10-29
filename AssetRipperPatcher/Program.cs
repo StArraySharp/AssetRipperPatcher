@@ -1,167 +1,96 @@
-using System.Reflection;
-using System.Reflection.Emit;
-using AssetRipper.Assets;
-using AssetRipper.Export;
+using AssetRipper.Export.Configuration;
 using AssetRipper.Export.UnityProjects;
-using AssetRipper.Export.UnityProjects.Project;
-using AssetRipper.Export.UnityProjects.Shaders;
 using AssetRipper.GUI.Web;
+using AssetRipper.Import.Logging;
 using AssetRipper.IO.Files;
-using AssetRipper.Primitives;
 using AssetRipper.Processing;
-using AssetRipper.SourceGenerated.Classes.ClassID_150;
-using AssetRipper.SourceGenerated.Classes.ClassID_48;
-using AssetRipper.SourceGenerated.Classes.ClassID_9;
-using AssetRipper.SourceGenerated.Subclasses.Vector2f;
-using AssetRipper.SourceGenerated.Subclasses.Vector4f;
-using AssetRipperPatcher.Shader.AssetRipper.Export.Modules.Shaders.Exporters;
+using AssetRipperPatcher.Patches;
 using HarmonyLib;
-using BindingFlags = System.Reflection.BindingFlags;
 
 namespace AssetRipperPatcher;
 
 class Program
 {
-    private static Harmony _harmony = new("starray.unity." + nameof(AssetRipperPatcher));
-    public static bool IsUnity6 => GameFileLoader.GameBundle.GetMaxUnityVersion().Major >= 6000;
+    private static readonly Harmony _harmony = new("starray.unity." + nameof(AssetRipperPatcher));
+
     public static void Main(string[] args)
     {
-        AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
-            Console.WriteLine(args.ExceptionObject);
+            Console.WriteLine(e.ExceptionObject);
         };
-        // 1. 应用 MetaPtr 构造函数补丁
-        Type metaPtrType = typeof(MetaPtr);
-        var constructor = metaPtrType.GetConstructor(
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(long), typeof(UnityGuid), typeof(AssetType)],
-            null
-        );
 
-        if (constructor != null)
+        // 应用所有补丁
+        MetaPtrPatch.Register(_harmony);
+        ShaderExportPatch.Register(_harmony);
+        PackageManifestPatch.Register(_harmony);
+        AssemblyProcessorsPatch.Register(_harmony);
+        NativePluginsPatch.Register(_harmony);
+        MonoBehaviourReadPatch.Register(_harmony);
+        LegacyFontPatch.Register(_harmony);
+
+        // 命令行模式：AssetRipperPatcher <游戏路径> <输出路径>，直接导出（触发所有补丁 + 诊断）
+        if (args.Length >= 2)
         {
-            // 使用 IL 编织器进行补丁
-            _harmony.Patch(constructor,
-                transpiler: new HarmonyMethod(typeof(Program).GetMethod(nameof(MetaPtr_ctor_Transpiler))));
-            Console.WriteLine("MetaPtr Patched");
-        }
-        else
-        {
-            Console.WriteLine("MetaPtr .ctor(long, UnityGuid, AssetType) not found");
-        }
-        Type projectExporterType = typeof(DummyShaderTextExporter);
-        MethodInfo? exportShader = projectExporterType.GetMethod("Export", 
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(IExportContainer), typeof(IUnityObjectBase), typeof(string), typeof(FileSystem)],
-            null);
-        if (exportShader != null)
-        {
-            _harmony.Patch(exportShader,
-                prefix: new HarmonyMethod(typeof(Program).GetMethod(nameof(ExportShader))));
-            Console.WriteLine("DummyShaderTextExporter.ExportShader Patched");
-            Console.WriteLine("Shader decompilation is an experimental feature. In the official version, this feature is paid. If you can afford it, please support the official version");
-        }
-        else
-        {
-            Console.WriteLine("DummyShaderTextExporter.ExportShader not found");
+            RunHeadlessExport(args[0], args[1]);
+            return;
         }
 
-        // 3. 应用 PackageManifest 补丁（注入 TMP/UGUI 包依赖）
-        Type manifestExporterType = typeof(PackageManifestPostExporter);
-        MethodInfo? createManifest = manifestExporterType.GetMethod("CreateManifest",
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-            null,
-            [typeof(UnityVersion)],
-            null);
-        if (createManifest != null)
-        {
-            _harmony.Patch(createManifest,
-                prefix: new HarmonyMethod(typeof(Program).GetMethod(nameof(PatchCreateManifest))));
-            Console.WriteLine("PackageManifestPostExporter.CreateManifest Patched");
-        }
-        else
-        {
-            Console.WriteLine("PackageManifestPostExporter.CreateManifest not found");
-        }
-
-        
         WebApplicationLauncher.Launch(args);
     }
 
-    public static IEnumerable<CodeInstruction> MetaPtr_ctor_Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-    {
-        var codes = new List<CodeInstruction>(instructions);
-
-        // 查找构造函数体开始的位置
-        // 我们想要在构造函数开始执行前插入我们的逻辑
-        bool foundStart = false;
-
-        for (int i = 0; i < codes.Count; i++)
-        {
-            // 查找构造函数的开始（通常是加载 this 指针）
-            if (!foundStart && codes[i].opcode == OpCodes.Ldarg_0)
-            {
-                Label continueLabel = generator.DefineLabel();
-
-                var newInstructions = new List<CodeInstruction>
-                {
-                    new(OpCodes.Ldarga_S, 1), // 加载 fileID 参数的地址（ref 参数）
-                    new(OpCodes.Ldarga_S, 2), // 加载 guid 参数的地址（ref 参数）
-                    new(OpCodes.Call, typeof(Program).GetMethod(nameof(ProcessMetaPtr),
-                        BindingFlags.Static | BindingFlags.Public,
-                        null,
-                        [typeof(long).MakeByRefType(), typeof(UnityGuid).MakeByRefType()],
-                        null)),
-                    new(OpCodes.Br, continueLabel)
-                };
-                codes[i].labels.Add(continueLabel);
-
-                codes.InsertRange(i, newInstructions);
-                break;
-            }
-        }
-
-        return codes;
-    }
-
-    public static void ProcessMetaPtr(ref long fileID, ref UnityGuid guid)
-    {
-        if (GuidMapping.TryGet(fileID, out var newGuid))
-        {
-            fileID = 11500000L;
-            guid = newGuid;
-        }
-    }
-
-    private static ShaderDisassemblyExporter _disassemblyExporter = new();
-    public static bool ExportShader(IExportContainer container, 
-        IUnityObjectBase asset, string path,
-        FileSystem fileSystem,ref bool __result)
-    {
-        __result = _disassemblyExporter.Export(container, asset, path, fileSystem);
-        return false;
-    }
-
     /// <summary>
-    /// Harmony Prefix: 在导出 manifest.json 时注入 IDE 和 UGUI 包依赖
+    /// 命令行导出模式：直接调用 AssetRipper 的导出 API。
+    /// 用法：AssetRipperPatcher <游戏根目录或文件> <输出目录>
+    /// 会触发已应用的所有补丁，并生成 MonoBehaviour 诊断文件。
     /// </summary>
-    public static bool PatchCreateManifest(UnityVersion version, ref PackageManifest __result)
+    private static void RunHeadlessExport(string inputPath, string outputPath)
     {
-        // 先调用原始逻辑获取默认清单
-        __result = PackageManifest.CreateDefault(version);
-
-        // 注入 IDE 支持
-        __result.Dependencies.TryAdd("com.unity.ide.rider", "3.0.31");
-        __result.Dependencies.TryAdd("com.unity.ide.visualstudio", "2.0.22");
-
-        // 仅 Unity 6+ 注入 UGUI（UGUI 自带 TMP，无需单独声明）
-        if (IsUnity6)
+        try
         {
-            __result.Dependencies.TryAdd("com.unity.ugui", GuidMapping.UGUIVersion);
-        }
+            // 配置日志：AssetRipper 的所有日志输出到控制台 + 写入文件
+            Logger.Add(new ConsoleLogger(resizeConsole: false));
+            Logger.Add(new FileLogger("AssetRipperPatcher.Headless.log"));
+            Logger.LogSystemInformation("AssetRipperPatcher");
+            Logger.Info(LogCategory.General, $"Headless export: input='{inputPath}' output='{outputPath}'");
 
-        return false; // 跳过原始方法
+            FullConfiguration settings = new();
+            settings.LogConfigurationValues();
+            ExportHandler exportHandler = new(settings);
+
+            string[] inputPaths;
+            if (Directory.Exists(inputPath))
+            {
+                // 直接把游戏根目录交给 AssetRipper，由它自行探测 *_Data 目录并只加载其中的资源。
+                // 避免递归枚举把 Mods.zip、Mods/ 下的 zip/dll 等 _Data 目录之外的内容一并导入。
+                inputPaths = [inputPath];
+                Logger.Info(LogCategory.Import, $"Using game directory '{inputPath}' (only *_Data content will be loaded)");
+            }
+            else if (File.Exists(inputPath))
+            {
+                inputPaths = [inputPath];
+            }
+            else
+            {
+                Logger.Error($"Input not found: '{inputPath}'");
+                return;
+            }
+
+            if (Directory.Exists(outputPath))
+            {
+                Logger.Info(LogCategory.Export, "Clearing export directory...");
+                Directory.Delete(outputPath, true);
+            }
+
+            GameData gameData = exportHandler.LoadAndProcess(inputPaths, LocalFileSystem.Instance);
+            AppState.CommandLineGameData = gameData;
+            exportHandler.Export(gameData, outputPath, LocalFileSystem.Instance);
+            Logger.Info(LogCategory.General, "Export completed.");
+            ShaderExportPatch.ReportShaderTally();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Headless export failed: {ex}");
+        }    
     }
 }
