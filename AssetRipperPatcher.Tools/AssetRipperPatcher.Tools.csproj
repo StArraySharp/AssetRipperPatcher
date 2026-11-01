@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- 分析器不随主程序发布 -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- RS2008（release tracking）：本项目是内部工具，不发 NuGet 包，无需 AnalyzerReleases 清单。
+         RS1030：分析器里确实要 Compilation.GetSemanticModel —— 候选集语义要求「全量成员」的
+         影子编译（见 ShadowView.cs），而 SyntaxNodeAnalysisContext.SemanticModel 绑的是默认
+         MetadataImportOptions.Internal 的编译，看不到 private 目标成员。
+         RS1035（禁止文件 IO）：ShadowView 需要 File.Exists / MetadataReference.CreateFromFile
+         把 ref assembly 换成同目录下的完整程序集，这是「不改上游子模块也能看到 private 成员」
+         的唯一途径（详见 ShadowView 的注释）。只在分析器初始化时做一次，且全部包在 try/catch 里。 -->
+    <NoWarn>$(NoWarn);RS2008;RS1030;RS1035</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 必须小于等于宿主 .NET SDK 自带的 Roslyn 版本（net10 SDK 内置 Roslyn 4.x），
+         升级 .NET SDK 时检查一次（设计文档第 10 节第 5 条）。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

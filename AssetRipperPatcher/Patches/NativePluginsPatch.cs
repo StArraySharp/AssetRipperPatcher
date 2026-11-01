@@ -1,8 +1,7 @@
-using System.Reflection;
 using AssetRipper.Export.UnityProjects;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
-using HarmonyLib;
+using AssetRipperPatcher.Patching;
 
 namespace AssetRipperPatcher.Patches;
 
@@ -12,30 +11,12 @@ namespace AssetRipperPatcher.Patches;
 /// </summary>
 internal static class NativePluginsPatch
 {
-    public static void Register(Harmony harmony)
-    {
-        MethodInfo? exportMethod = typeof(ExportHandler).GetMethod("Export",
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(GameData), typeof(string), typeof(FileSystem)],
-            null);
-        if (exportMethod != null)
-        {
-            harmony.Patch(exportMethod,
-                postfix: new HarmonyMethod(typeof(NativePluginsPatch).GetMethod(nameof(CopyNativePluginsAfterExport))));
-            Console.WriteLine("ExportHandler.Export Patched (copy native plugins after export)");
-        }
-        else
-        {
-            Console.WriteLine("ExportHandler.Export not found");
-        }
-    }
-
     /// <summary>
     /// Harmony Postfix: 导出 Unity 项目完成后，把游戏数据目录 (GameName_Data) 下
     /// Plugins 中的所有子目录（原生库）复制到导出项目的 Assets/Plugins 下。
     /// 源目录为 {GameName_Data}/Plugins，目标为 {输出目录}/ExportedProject/Assets/Plugins。
     /// </summary>
+    [PatchMethod(typeof(ExportHandler), "Export", PatchType = PatchType.Postfix)]
     public static void CopyNativePluginsAfterExport(GameData gameData, string outputPath, FileSystem fileSystem)
     {
         try

@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using AsmResolver.DotNet;
 using AssetRipper.Import.AssetCreation;
@@ -10,7 +9,7 @@ using AssetRipper.IO.Endian;
 using AssetRipper.SerializationLogic;
 using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using AssetRipper.SourceGenerated.Classes.ClassID_115;
-using HarmonyLib;
+using AssetRipperPatcher.Patching;
 
 namespace AssetRipperPatcher.Patches;
 
@@ -34,68 +33,13 @@ internal static class MonoBehaviourReadPatch
     private static readonly HashSet<string> LoggedFailures = new();
     private static readonly object LoggedFailuresLock = new();
 
-    public static void Register(Harmony harmony)
-    {
-        // LoadStructure 补丁：标准读取失败后自动用容错模式重试（尽量读，缺失字段给默认值）；
-        // 容错也失败时才写诊断文件（由 LenientRetryPostfix 调用 DiagnoseMonoBehaviourLoadFailure）
-        MethodInfo? loadStructureMethod = typeof(UnloadedStructure).GetMethod("LoadStructure",
-            BindingFlags.Public | BindingFlags.Instance);
-        if (loadStructureMethod != null)
-        {
-            harmony.Patch(loadStructureMethod,
-                postfix: new HarmonyMethod(typeof(MonoBehaviourReadPatch).GetMethod(nameof(LenientRetryPostfix))));
-            Console.WriteLine($"UnloadedStructure.LoadStructure Patched (lenient retry + diagnostics -> {DiagnosticFilePath})");
-        }
-        else
-        {
-            Console.WriteLine("UnloadedStructure.LoadStructure not found");
-        }
-
-        MethodInfo? tryReadMethod = typeof(SerializableStructure).GetMethod("TryRead",
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(EndianSpanReader).MakeByRefType(), typeof(IMonoBehaviour), typeof(ITypeResolver)],
-            null);
-        if (tryReadMethod != null)
-        {
-            harmony.Patch(tryReadMethod,
-                prefix: new HarmonyMethod(typeof(MonoBehaviourReadPatch).GetMethod(nameof(TryRead_LenientPrefix))));
-            Console.WriteLine("SerializableStructure.TryRead Patched (lenient read)");
-        }
-        else
-        {
-            Console.WriteLine("SerializableStructure.TryRead not found");
-        }
-
-        // 减少刷屏：MonoBehaviour 读取失败日志每类型只打印一次
-        PatchLogMethod(harmony, typeof(SerializableStructure), "LogMonoBehaviourMismatch", nameof(LimitMismatchLog));
-        PatchLogMethod(harmony, typeof(SerializableStructure), "LogMonoBehaviorReadException", nameof(LimitReadExceptionLog));
-        PatchLogMethod(harmony, typeof(GameAssetFactory), "LogMonoBehaviorReadException", nameof(LimitReadExceptionLog2));
-
-        // 限流 Logger 里的 MonoBehaviour 读取失败 Warning/Error（如 "Script ID is invalid"）
-        MethodInfo? loggerLogMethod = typeof(Logger).GetMethod("Log",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            [typeof(LogType), typeof(LogCategory), typeof(string)],
-            null);
-        if (loggerLogMethod != null)
-        {
-            harmony.Patch(loggerLogMethod,
-                prefix: new HarmonyMethod(typeof(MonoBehaviourReadPatch).GetMethod(nameof(LimitLog))));
-            Console.WriteLine("Logger.Log Patched (rate-limited MonoBehaviour warnings)");
-        }
-        else
-        {
-            Console.WriteLine("Logger.Log not found");
-        }
-    }
-
     /// <summary>
     /// Harmony Prefix: 容错模式下，SerializableStructure.TryRead 直接调用 Read 并捕获异常
     /// （接受部分读取，缺失字段保持默认值），并跳过原方法的位置检查。
     /// 2.0.0 起 Read/TryRead 多了一个必填的 <c>ITypeResolver</c> 参数，
     /// 由 Harmony 按名匹配透传进来，再原样传给 Read。
     /// </summary>
+    [PatchMethod(typeof(SerializableStructure), "TryRead", PatchType = PatchType.Prefix)]
     public static bool TryRead_LenientPrefix(SerializableStructure __instance, ref EndianSpanReader reader,
         IMonoBehaviour monoBehaviour, ITypeResolver resolver, ref bool __result)
     {
@@ -118,6 +62,7 @@ internal static class MonoBehaviourReadPatch
     /// <summary>
     /// Harmony Postfix: 标准读取失败后，用容错模式重新读取（尽量读，缺失字段给默认值）。
     /// </summary>
+    [PatchMethod(typeof(UnloadedStructure), "LoadStructure", PatchType = PatchType.Postfix)]
     public static void LenientRetryPostfix(UnloadedStructure __instance, ref SerializableStructure? __result)
     {
         if (__result is not null || LenientRetryInProgress)
@@ -192,13 +137,21 @@ internal static class MonoBehaviourReadPatch
         }
     }
 
+    [PatchMethod(typeof(SerializableStructure), "LogMonoBehaviourMismatch", PatchType = PatchType.Prefix)]
     public static bool LimitMismatchLog(SerializableStructure structure) => ShouldLog("mm:" + structure);
+
+    [PatchMethod(typeof(SerializableStructure), "LogMonoBehaviorReadException", PatchType = PatchType.Prefix)]
     public static bool LimitReadExceptionLog(SerializableStructure structure) => ShouldLog("re:" + structure);
+
+    [PatchMethod(typeof(GameAssetFactory), "LogMonoBehaviorReadException", PatchType = PatchType.Prefix)]
     public static bool LimitReadExceptionLog2(IMonoBehaviour monoBehaviour) => ShouldLog("re2:" + (monoBehaviour.ScriptP?.GetFullName() ?? "?"));
 
     /// <summary>
     /// Harmony Prefix: 对 Logger 里的 MonoBehaviour 读取失败信息按脚本名限流（每类型只打印一次）。
+    /// Logger.Log 有 (LogType,LogCategory,string) 与 (LogType,LogCategory,string[]) 两个重载，
+    /// 参数个数相同；确定性排序下 string[] 版本是 index 0，string 版本是 index 1。
     /// </summary>
+    [PatchMethod(typeof(Logger), "Log", OverrideIndex = 1, PatchType = PatchType.Prefix)]
     public static bool LimitLog(LogType type, LogCategory category, string message)
     {
         if (message.StartsWith("Could not read MonoBehaviour structure", StringComparison.Ordinal)
@@ -231,20 +184,6 @@ internal static class MonoBehaviourReadPatch
             }
         }
         return null;
-    }
-
-    private static void PatchLogMethod(Harmony harmony, Type type, string methodName, string patchName)
-    {
-        MethodInfo? method = type.GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-        if (method != null)
-        {
-            harmony.Patch(method, prefix: new HarmonyMethod(typeof(MonoBehaviourReadPatch).GetMethod(patchName)));
-            Console.WriteLine($"{type.Name}.{methodName} Patched (rate-limited)");
-        }
-        else
-        {
-            Console.WriteLine($"{type.Name}.{methodName} not found");
-        }
     }
 
     /// <summary>

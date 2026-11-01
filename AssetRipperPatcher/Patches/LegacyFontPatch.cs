@@ -1,9 +1,8 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using AssetRipper.Export.UnityProjects;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
-using HarmonyLib;
+using AssetRipperPatcher.Patching;
 
 namespace AssetRipperPatcher.Patches;
 
@@ -28,28 +27,10 @@ internal static partial class LegacyFontPatch
     [GeneratedRegex(@"(?m)^  m_DefaultMaterial: \{fileID: 2100000, guid: [0-9a-f]+, type: 2\}")]
     private static partial Regex MaterialRefRegex();
 
-    public static void Register(Harmony harmony)
-    {
-        MethodInfo? exportMethod = typeof(ExportHandler).GetMethod("Export",
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(GameData), typeof(string), typeof(FileSystem)],
-            null);
-        if (exportMethod != null)
-        {
-            harmony.Patch(exportMethod,
-                postfix: new HarmonyMethod(typeof(LegacyFontPatch).GetMethod(nameof(FixLegacyFontsAfterExport))));
-            Console.WriteLine("ExportHandler.Export Patched (fix legacy dynamic fonts after export)");
-        }
-        else
-        {
-            Console.WriteLine("ExportHandler.Export not found (legacy font fix)");
-        }
-    }
-
     /// <summary>
     /// Harmony Postfix: 导出完成后扫描所有 Font 资源，把动态字体的悬空图集引用置空。
     /// </summary>
+    [PatchMethod(typeof(ExportHandler), nameof(ExportHandler.Export), PatchType = PatchType.Postfix)]
     public static void FixLegacyFontsAfterExport(GameData gameData, string outputPath, FileSystem fileSystem)
     {
         try

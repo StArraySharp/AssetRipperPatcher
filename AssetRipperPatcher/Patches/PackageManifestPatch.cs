@@ -1,7 +1,6 @@
-using System.Reflection;
 using AssetRipper.Export.UnityProjects.Project;
 using AssetRipper.Primitives;
-using HarmonyLib;
+using AssetRipperPatcher.Patching;
 
 namespace AssetRipperPatcher.Patches;
 
@@ -10,29 +9,10 @@ namespace AssetRipperPatcher.Patches;
 /// </summary>
 internal static class PackageManifestPatch
 {
-    public static void Register(Harmony harmony)
-    {
-        Type manifestExporterType = typeof(PackageManifestPostExporter);
-        MethodInfo? createManifest = manifestExporterType.GetMethod("CreateManifest",
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-            null,
-            [typeof(UnityVersion)],
-            null);
-        if (createManifest != null)
-        {
-            harmony.Patch(createManifest,
-                prefix: new HarmonyMethod(typeof(PackageManifestPatch).GetMethod(nameof(PatchCreateManifest))));
-            Console.WriteLine("PackageManifestPostExporter.CreateManifest Patched");
-        }
-        else
-        {
-            Console.WriteLine("PackageManifestPostExporter.CreateManifest not found");
-        }
-    }
-
     /// <summary>
     /// Harmony Prefix: 在导出 manifest.json 时注入 IDE 和 UGUI 包依赖
     /// </summary>
+    [PatchMethod(typeof(PackageManifestPostExporter), "CreateManifest", PatchType = PatchType.Prefix)]
     public static bool PatchCreateManifest(UnityVersion version, ref PackageManifest __result)
     {
         // 先调用原始逻辑获取默认清单

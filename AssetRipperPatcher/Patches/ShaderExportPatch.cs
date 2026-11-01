@@ -1,11 +1,10 @@
-using System.Reflection;
 using AssetRipper.Assets;
 using AssetRipper.Export;
 using AssetRipper.Export.UnityProjects;
 using AssetRipper.Export.UnityProjects.Shaders;
 using AssetRipper.IO.Files;
+using AssetRipperPatcher.Patching;
 using AssetRipperPatcher.Shader.AssetRipper.Export.Modules.Shaders.Exporters;
-using HarmonyLib;
 
 namespace AssetRipperPatcher.Patches;
 
@@ -18,32 +17,16 @@ internal static class ShaderExportPatch
     private static ShaderDisassemblyExporter _disassemblyExporter = new();
     private static ShaderRipperExporter _shaderRipExporter = new();
 
-    public static void Register(Harmony harmony)
-    {        Type projectExporterType = typeof(DummyShaderTextExporter);
-        MethodInfo? exportShader = projectExporterType.GetMethod("Export",
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(IExportContainer), typeof(IUnityObjectBase), typeof(string), typeof(FileSystem)],
-            null);
-        if (exportShader != null)
-        {
-            harmony.Patch(exportShader,
-                prefix: new HarmonyMethod(typeof(ShaderExportPatch).GetMethod(nameof(ExportShader))));
-            Console.WriteLine("DummyShaderTextExporter.ExportShader Patched");
-            LocalFeatureNotice.ShowOnce("Shader decompilation", "AssetRipperPatcher");
-        }
-        else
-        {
-            Console.WriteLine("DummyShaderTextExporter.ExportShader not found");
-        }
-    }
-
     /// <summary>
     /// Print the shader export tally once the run finishes, so a silent fallback is
     /// still visible without a per-shader log line.
     /// </summary>
     public static void ReportShaderTally() => ShaderRipperExporter.ReportTally();
 
+    // 候选集含 BinaryAssetExporter 基类链上的同名 Export 重载。4 参 bool 组中，
+    // 按 declaringType canonical 排序 BinaryAssetExporter（基类）在前，
+    // DummyShaderTextExporter（override）是 index 1。
+    [PatchMethod(typeof(DummyShaderTextExporter), "Export", OverrideIndex = 1, PatchType = PatchType.Prefix)]
     public static bool ExportShader(IExportContainer container,
         IUnityObjectBase asset, string path,
         FileSystem fileSystem, ref bool __result)

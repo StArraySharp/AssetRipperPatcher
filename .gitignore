@@ -53,3 +53,11 @@ AssetRipperPatcher/obj/
 publish
 # Local sandbox projects (not part of the build)
 .ignores/
+
+# Release artifacts
+AssetRipperPatcher-*.zip
+
+
+# Local agent notes
+.workbuddy/
+

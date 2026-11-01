@@ -4,6 +4,7 @@ using AssetRipper.GUI.Web;
 using AssetRipper.Import.Logging;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
+using AssetRipperPatcher.Patching;
 using AssetRipperPatcher.Patches;
 using HarmonyLib;
 
@@ -20,14 +21,12 @@ class Program
             Console.WriteLine(e.ExceptionObject);
         };
 
-        // 应用所有补丁
-        MetaPtrPatch.Register(_harmony);
-        ShaderExportPatch.Register(_harmony);
-        PackageManifestPatch.Register(_harmony);
-        AssemblyProcessorsPatch.Register(_harmony);
-        NativePluginsPatch.Register(_harmony);
-        MonoBehaviourReadPatch.Register(_harmony);
-        LegacyFontPatch.Register(_harmony);
+        // 命令行选项：--only Sprite,Texture2D 之类，必须在补丁注册前解析（过滤补丁读 AppState）
+        args = CommandLineOptions.Apply(args);
+
+        // 应用所有补丁：照 [PatchMethod] 注解自动注册（失败即抛，永不静默跳过）
+        LocalFeatureNotice.ShowOnce("Shader decompilation", "AssetRipperPatcher");
+        PatchRegistrar.RegisterAll(_harmony);
 
         // 命令行模式：AssetRipperPatcher <游戏路径> <输出路径>，直接导出（触发所有补丁 + 诊断）
         if (args.Length >= 2)
@@ -55,6 +54,9 @@ class Program
             Logger.Info(LogCategory.General, $"Headless export: input='{inputPath}' output='{outputPath}'");
 
             FullConfiguration settings = new();
+            // 加载 bin 下的 AssetRipper.Settings.json（与 Web 模式共用同一份配置）。
+            // 不加载的话下面 LogConfigurationValues 打印的是代码默认值，导出行为也和用户配置不一致。
+            settings.LoadFromDefaultPath();
             settings.LogConfigurationValues();
             ExportHandler exportHandler = new(settings);
 

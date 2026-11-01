@@ -1,8 +1,8 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using AssetRipper.Export.UnityProjects;
-using AssetRipper.IO.Files;
 using AssetRipper.Primitives;
+using AssetRipperPatcher.Patching;
 using HarmonyLib;
 
 namespace AssetRipperPatcher.Patches;
@@ -13,29 +13,9 @@ namespace AssetRipperPatcher.Patches;
 /// </summary>
 internal static class MetaPtrPatch
 {
-    public static void Register(Harmony harmony)
-    {
-        Type metaPtrType = typeof(MetaPtr);
-        var constructor = metaPtrType.GetConstructor(
-            BindingFlags.Public | BindingFlags.Instance,
-            null,
-            [typeof(long), typeof(UnityGuid), typeof(AssetType)],
-            null
-        );
-
-        if (constructor != null)
-        {
-            // 使用 IL 编织器进行补丁
-            harmony.Patch(constructor,
-                transpiler: new HarmonyMethod(typeof(MetaPtrPatch).GetMethod(nameof(MetaPtr_ctor_Transpiler))));
-            Console.WriteLine("MetaPtr Patched");
-        }
-        else
-        {
-            Console.WriteLine("MetaPtr .ctor(long, UnityGuid, AssetType) not found");
-        }
-    }
-
+    // MetaPtr 是 record struct：主构造 (long,UnityGuid,AssetType) + 显式 (long)。
+    // 候选集按参数个数升序：(long) 是 index 0，主构造是 index 1。
+    [PatchMethod(typeof(MetaPtr), ".ctor", OverrideIndex = 1, PatchType = PatchType.Transpiler)]
     public static IEnumerable<CodeInstruction> MetaPtr_ctor_Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
     {
         var codes = new List<CodeInstruction>(instructions);

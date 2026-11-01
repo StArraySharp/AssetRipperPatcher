@@ -32,4 +32,6 @@
     <Project Path="AssetRipper/Source/AssetRipper.Yaml/AssetRipper.Yaml.csproj" />
   </Folder>
   <Project Path="AssetRipperPatcher/AssetRipperPatcher.csproj" />
+  <Project Path="AssetRipperPatcher.Tools/AssetRipperPatcher.Tools.csproj" />
+  <Project Path="AssetRipperPatcher.Tests/AssetRipperPatcher.Tests.csproj" />
 </Solution>

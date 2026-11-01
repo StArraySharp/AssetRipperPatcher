@@ -1,17 +1,41 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <FileVersion>1.0.0.0</FileVersion>
+        <Product>AssetRipperPatcher</Product>
+        <Description>Export enhancements for AssetRipper: shader decompilation, sprite mesh/outline repair, alpha textures, legacy fonts.</Description>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="AssetRipper.Primitives" Version="3.2.0" />
       <PackageReference Include="DXDecompiler-ly" Version="0.0.1" />
       <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+      <!-- Sprite 轮廓生成的三角化：libtess2 的 C# 移植（MIT），对应 Unity 原版的外部依赖 libtess2。 -->
+      <PackageReference Include="LibTessDotNet" Version="1.1.15" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    </ItemGroup>
+
+    <!-- 自检测试项目需要访问 internal 类型（Patch 类、Program 等）。 -->
+    <ItemGroup>
+      <InternalsVisibleTo Include="AssetRipperPatcher.Tests" />
+    </ItemGroup>
+
+    <!-- 注解校验分析器：编译期照 [PatchMethod]/[Access*] 注解做 HRP 诊断。
+         ProjectReference + OutputItemType="Analyzer" 是「项目内分析器」的标准接法：
+         csc 拿到 /analyzer:，Rider 的 Roslyn worker 也按「引用项目产出的分析器」处理。
+         不要再额外加静态 <Analyzer Include=...> —— 同一个 dll 从两条路径进来会让每条
+         诊断报两遍。 -->
+    <ItemGroup>
+      <ProjectReference Include="..\AssetRipperPatcher.Tools\AssetRipperPatcher.Tools.csproj"
+                        OutputItemType="Analyzer"
+                        ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <!-- Plugins/ holds Unity Editor scripts that go into an unpacked game
@@ -34,23 +58,36 @@
 
     <!-- Publish the library next to the patcher binary, so a build leaves a
          drop-in `ShaderRipper.dll` (+ its pdb) in a fixed location that other
-         tooling can copy from. -->
+         tooling can copy from.
+
+         Build 和 Publish 各挂一个 target：Publish 不会触发 Build 的 AfterTargets，
+         而 `dotnet publish` 的产物目录是 $(PublishDir) 而不是 $(OutDir)。 -->
     <PropertyGroup>
         <ShaderRipperLibDir>$(MSBuildThisFileDirectory)..\..\ShaderRipper\src\ShaderRipper\bin\$(Configuration)\$(TargetFramework)\</ShaderRipperLibDir>
     </PropertyGroup>
 
+    <ItemGroup>
+        <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.dll" />
+        <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.pdb" />
+    </ItemGroup>
+
     <Target Name="CopyShaderRipperLibrary" AfterTargets="Build">
-        <ItemGroup>
-            <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.dll" />
-            <ShaderRipperBin Include="$(ShaderRipperLibDir)ShaderRipper.pdb" />
-        </ItemGroup>
-        <Warning Text="ShaderRipper.dll not found at $(ShaderRipperLibDir); build that project first."
-                 Condition="!Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
         <Copy SourceFiles="@(ShaderRipperBin)"
               DestinationFolder="$(OutDir)ShaderRipper"
               SkipUnchangedFiles="true"
               Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Warning Text="ShaderRipper.dll not found at $(ShaderRipperLibDir); build that project first."
+                 Condition="!Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
         <Message Importance="high" Text="ShaderRipper library -> $(OutDir)ShaderRipper"
+                 Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+    </Target>
+
+    <Target Name="CopyShaderRipperLibraryOnPublish" AfterTargets="Publish">
+        <Copy SourceFiles="@(ShaderRipperBin)"
+              DestinationFolder="$(PublishDir)ShaderRipper"
+              SkipUnchangedFiles="true"
+              Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Message Importance="high" Text="ShaderRipper library -> $(PublishDir)ShaderRipper"
                  Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
     </Target>
 
