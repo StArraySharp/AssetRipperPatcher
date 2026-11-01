@@ -35,6 +35,9 @@ class Program
             return;
         }
 
+        // GUI 模式：确保设置文件存在（首次运行会写入推荐默认值），
+        // 这样 Web UI 的「设置」页读到的就是同一份配置，而不是内存里的代码默认值。
+        AppSettings.LoadOrCreate();
         WebApplicationLauncher.Launch(args);
     }
 
@@ -53,10 +56,7 @@ class Program
             Logger.LogSystemInformation("AssetRipperPatcher");
             Logger.Info(LogCategory.General, $"Headless export: input='{inputPath}' output='{outputPath}'");
 
-            FullConfiguration settings = new();
-            // 加载 bin 下的 AssetRipper.Settings.json（与 Web 模式共用同一份配置）。
-            // 不加载的话下面 LogConfigurationValues 打印的是代码默认值，导出行为也和用户配置不一致。
-            settings.LoadFromDefaultPath();
+            FullConfiguration settings = AppSettings.LoadOrCreate();
             settings.LogConfigurationValues();
             ExportHandler exportHandler = new(settings);
 

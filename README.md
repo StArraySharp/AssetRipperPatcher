@@ -33,7 +33,16 @@ AssetRipperPatcher <游戏路径> <输出目录> --only Sprite*
 AssetRipperPatcher
 ```
 
-导出配置读 `AssetRipper.Settings.json`（与 Web UI 共用同一份）。
+导出配置读程序目录下的 `AssetRipper.Settings.json`，命令行与 Web UI 共用同一份。
+**文件不存在时会自动创建**，并写入一组面向「导出可编辑 Unity 工程」的默认值：
+
+| 设置项 | 默认值 | 原因 |
+|---|---|---|
+| `SpriteExportMode` | `Native` | 把网格/轮廓写进 `.meta`；`Yaml` 模式只产出 `.asset`，importer 里 outline 为空 |
+| `TextExportMode` | `Txt` | 文本资源导出成可直接阅读的纯文本，而不是 `.bytes` |
+| `SaveSettingsToDisk` | `true` | 之后每次启动沿用同一份配置 |
+
+文件已存在时不会覆盖，尊重手动修改。
 
 ## 构建
 
