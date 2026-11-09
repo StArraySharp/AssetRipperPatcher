@@ -29,8 +29,16 @@ internal static partial class LegacyFontPatch
 
     /// <summary>
     /// Harmony Postfix: 导出完成后扫描所有 Font 资源，把动态字体的悬空图集引用置空。
+    ///
+    /// <para><b>Priority。</b>
+    /// <see cref="NativePluginsPatch.CopyNativePluginsAfterExport"/> 也是
+    /// <c>ExportHandler.Export</c> 的 Postfix。两者互不依赖（一个改 Font .asset，
+    /// 一个复制 Plugins/ 并修 TMP guid 引用），但 Harmony 的执行顺序在 priority 相同时
+    /// 退化成「注册顺序」= <c>assembly.GetTypes()</c>，不保证稳定。这里显式声明
+    /// <see cref="HarmonyLib.Priority.HigherThanNormal"/>，让字体修复先跑。</para>
     /// </summary>
-    [PatchMethod(typeof(ExportHandler), nameof(ExportHandler.Export), PatchType = PatchType.Postfix)]
+    [PatchMethod(typeof(ExportHandler), nameof(ExportHandler.Export),
+        PatchType = PatchType.Postfix, Priority = HarmonyLib.Priority.HigherThanNormal)]
     public static void FixLegacyFontsAfterExport(GameData gameData, string outputPath, FileSystem fileSystem)
     {
         try

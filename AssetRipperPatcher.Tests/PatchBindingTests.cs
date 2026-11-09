@@ -68,6 +68,43 @@ public class PatchBindingTests
     }
 
     /// <summary>
+    /// 运行期与编译期必须一致：注册器也用同一规则拒绝「同目标同 kind 未排序」。
+    /// 这条是编译期 HRP005 的运行时兜底——分析器万一没跑，启动时也要炸。
+    /// </summary>
+    [Fact]
+    public void Ambiguous_order_is_rejected_at_registration()
+    {
+        IReadOnlyList<PatchReport> reports = PatchRegistrar.DescribeAll(PatcherAssembly);
+        // 真实补丁集已经全部声明了 Priority，所以这里不该抛。
+        PatchRegistrar.EnsureUnambiguousOrder(reports, message => new InvalidOperationException(message));
+
+        PatchReport sample = reports.First(r => r.Attr.PatchType == PatchType.Postfix);
+        // 同目标同 kind、未声明 Priority 的两条 → 必须拒绝
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
+            () => PatchRegistrar.EnsureUnambiguousOrder([sample, sample],
+                message => new InvalidOperationException(message)));
+        Assert.Contains("Priority", ex.Message);
+
+        // 两个都显式声明 Priority 就放行
+        PatchReport high = sample with { Attr = CloneWithPriority(sample.Attr, 500) };
+        PatchReport low = sample with { Attr = CloneWithPriority(sample.Attr, 300) };
+        PatchRegistrar.EnsureUnambiguousOrder([high, low], message => new InvalidOperationException(message));
+
+        // 只有一个补丁时，不声明 Priority 也不该报
+        PatchRegistrar.EnsureUnambiguousOrder([sample], message => new InvalidOperationException(message));
+    }
+
+    private static PatchMethodAttribute CloneWithPriority(PatchMethodAttribute source, int priority)
+    {
+        return new PatchMethodAttribute(source.TargetType, source.MethodName)
+        {
+            PatchType = source.PatchType,
+            OverrideIndex = source.OverrideIndex,
+            Priority = priority,
+        };
+    }
+
+    /// <summary>
     /// 测试 3：全部访问器在 ModuleInitializer 阶段已绑定成功。
     /// </summary>
     [Fact]

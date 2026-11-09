@@ -45,11 +45,20 @@ internal static class SpriteSingleModePatch
 {
     /// <summary>
     /// 挂在 <see cref="TextureExportCollection.AddSprites"/> 之后。
+    ///
+    /// <para><b>Priority 为什么必须写。</b>
+    /// 同一个 target 上还有 <see cref="SpriteOutlineRepairPatch.RepairOutlines"/> 也是
+    /// AddSprites 的 Postfix。Postfix 按 priority 从大到小执行，而这里的坐标换算
+    /// 必须在轮廓修好之后做（换算会改动 outline/pivot 的坐标系），所以取
+    /// <see cref="HarmonyLib.Priority.LowerThanNormal"/>，让对方取
+    /// <see cref="HarmonyLib.Priority.HigherThanNormal"/>。
+    /// </para>
     /// </summary>
-    [PatchMethod(typeof(TextureExportCollection), "AddSprites", PatchType = PatchType.Postfix)]
+    [PatchMethod(typeof(TextureExportCollection), "AddSprites",
+        PatchType = PatchType.Postfix, Priority = HarmonyLib.Priority.LowerThanNormal)]
     public static void FixSpriteSheetCoordinates(
-        ITextureImporter importer,
-        IReadOnlyDictionary<ISprite, ISpriteAtlas?>? textureSpriteInformation)
+    ITextureImporter importer,
+    IReadOnlyDictionary<ISprite, ISpriteAtlas?>? textureSpriteInformation)
     {
         if (importer is null || textureSpriteInformation is null || textureSpriteInformation.Count == 0)
         {

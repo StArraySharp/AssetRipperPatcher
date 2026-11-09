@@ -28,7 +28,8 @@ namespace AssetRipperPatcher.Patches;
 ///
 /// <para><b>3. alpha 轮廓兜底。</b>
 /// 顶点序列也不可信时（点数太少、或包围盒覆盖率明显不足），
-/// 用纹理 alpha 通道重新生成轮廓，<b>alpha 容差拉到最大</b>。</para>
+/// 用纹理 alpha 通道重新生成轮廓。容差取 Unity 编辑器默认值 200，
+/// 并在「一个实体像素都没有」时逐级降级（见 <see cref="AlphaTolerances"/>）。</para>
 ///
 /// <para><b>坐标系。</b>
 /// 顶点是「相对 pivot」的像素坐标，加上 <c>Offset</c> 即回到「相对 rect 中心」，
@@ -41,11 +42,24 @@ internal static class SpriteOutlineRepairPatch
     /// <summary>
     /// 轮廓生成用的 alpha 容差。
     ///
-    /// 254 是原版上限（<c>kSpriteMaxAlphaTolerance</c>），但实测过高的容差会把半透明边缘
-    /// 全纳入掩码，导致轮廓追踪在连通域上退化（某切片有 3791 个 alpha 像素
-    /// 却生成 0 条轮廓）。取 128 兼顾「尽量宽松」与「能稳定追踪」。
+    /// <para><b>为什么是 200。</b>
+    /// Unity 的判定是 <c>alpha &gt; tolerance</c>（见 <c>SpriteMeshGenerator.h</c> 的 <c>mask</c> 构造函数），
+    /// 三个常量各管一摊：</para>
+    /// <list type="bullet">
+    /// <item><c>kSpriteDefaultAlphaTolerance = 0</c> —— 运行时渲染网格（本仓库
+    /// <c>SpriteOutlinePatch</c> 用的就是它，保持不动）。</item>
+    /// <item><c>kSpriteEditorDefaultAlphaTolerance = 200</c> —— <b>编辑器生成 outline 的默认值</b>，即这里。</item>
+    /// <item><c>kSpriteMaxAlphaTolerance = 254</c> —— 只是 UI 滑块上限
+    /// （<c>SpriteFrameMetaData.cpp</c> 里 <c>clamp(…, 0, 254)</c>），不是默认值。</item>
+    /// </list>
+    ///
+    /// <para><b>为什么不用 254。</b>
+    /// 254 要求实体像素恰好 alpha=255。实测（<c>AlphaToleranceTests</c>）：
+    /// 抗锯齿圆从 42 个点掉到 23 点、包围盒覆盖率 61%→56%；整块峰值不足 255 的素材
+    /// （半透明光晕、<c>Alpha8</c> 遮罩）会直接判成全空，轮廓整段丢失。
+    /// Unity 自己也不用 254 当默认值，正是因为这一点。</para>
     /// </summary>
-    private const byte OutlineAlphaTolerance = 128;
+    private const byte OutlineAlphaTolerance = 200;
 
     /// <summary>少于这么多点的 outline 视为不可用。</summary>
     private const int MinimumViableOutlinePoints = 8;
@@ -59,10 +73,23 @@ internal static class SpriteOutlineRepairPatch
     /// </summary>
     private const float MinimumCoverageRatio = 0.05F;
 
-    [PatchMethod(typeof(TextureExportCollection), "AddSprites", PatchType = PatchType.Postfix)]
+    /// <summary>
+    /// 挂在 <see cref="TextureExportCollection.AddSprites"/> 之后。
+    ///
+    /// <para><b>Priority 为什么必须写。</b>
+    /// 同一个 target 上还有 <see cref="SpriteSingleModePatch.FixSpriteSheetCoordinates"/>
+    /// 也是 AddSprites 的 Postfix，而 Harmony 的 Postfix **按 priority 从大到小依次执行**。
+    /// 语义上必须先「按 rect 坐标系修好轮廓」，再「换算到整图坐标」，所以这里取
+    /// <see cref="HarmonyLib.Priority.HigherThanNormal"/>、对方取
+    /// <see cref="HarmonyLib.Priority.LowerThanNormal"/>。不写 priority 的话
+    /// 次序就取决于 <c>assembly.GetTypes()</c>，注册器会直接拒绝启动。
+    /// </para>
+    /// </summary>
+    [PatchMethod(typeof(TextureExportCollection), "AddSprites",
+        PatchType = PatchType.Postfix, Priority = HarmonyLib.Priority.HigherThanNormal)]
     public static void RepairOutlines(
-        ITextureImporter importer,
-        IReadOnlyDictionary<ISprite, ISpriteAtlas?>? textureSpriteInformation)
+    ITextureImporter importer,
+    IReadOnlyDictionary<ISprite, ISpriteAtlas?>? textureSpriteInformation)
     {
         if (importer is null || textureSpriteInformation is null || textureSpriteInformation.Count == 0)
         {
@@ -371,25 +398,41 @@ internal static class SpriteOutlineRepairPatch
         return IsContourUsable(points, rectWidth, rectHeight);
     }
 
+    /// <summary>轮廓生成的 alpha 容差回退序列。</summary>
+    /// <remarks>
+    /// <see cref="OutlineAlphaTolerance"/>（200，Unity 编辑器默认值）打头。
+    /// 它仍然可能全空：整块素材的峰值 alpha 都 ≤ 200（很淡的光晕、被导成 <c>Alpha8</c> 的遮罩）时，
+    /// <c>alpha &gt; tolerance</c> 一个实体像素都选不出来。此时逐级降低容差，
+    /// 保证「有像素但提取不出轮廓」不会静默变成「这段轮廓不存在」。
+    /// </remarks>
+    private static readonly byte[] AlphaTolerances =
+    [
+        OutlineAlphaTolerance,
+            (byte)128,
+            (byte)0,
+        ];
+
     /// <summary>
-    /// 用 alpha 生成一组轮廓。抽出来是为了能用不同 <paramref name="extrude"/> 重试。
+    /// 用 alpha 生成一组轮廓。抽出来是为了能用不同 <paramref name="extrude"/> /
+    /// <paramref name="alphaTolerance"/> 重试。
     /// </summary>
     private static List<List<Vector2>> GenerateAlphaContours(
         byte[] pixels,
         int textureWidth,
         int textureHeight,
-        ISprite sprite,
+            float pixelsToUnits,
         Rectf rect,
         Vector2 offset,
+        byte alphaTolerance,
         uint extrude,
         out bool hasError)
     {
         List<List<Vector2>> contours = new();
         hasError = SpriteUtility.GenerateSpriteOutline(
-            pixels, textureWidth, textureHeight, sprite.PixelsToUnits,
+                pixels, textureWidth, textureHeight, pixelsToUnits,
             rect, offset,
             detail: 1.0F,
-            alphaTolerance: OutlineAlphaTolerance,
+            alphaTolerance: alphaTolerance,
             holeDetection: true,
             extrude: extrude,
             simplifyMode: (int)PathSimplifyMode.kPathEmbed,
@@ -439,7 +482,8 @@ internal static class SpriteOutlineRepairPatch
     }
 
     /// <summary>
-    /// 用纹理 alpha 生成轮廓，alpha 容差取最大（254）。
+    /// 用纹理 alpha 生成轮廓。
+    /// 容差按 <see cref="AlphaTolerances"/> 逐级回退（200 → 128 → 0），见该字段的说明。
     /// 走的是移植自 Unity 的 <see cref="SpriteUtility"/>，
     /// 结果已是「相对 rect 中心」的像素坐标。
     /// </summary>
@@ -471,36 +515,91 @@ internal static class SpriteOutlineRepairPatch
                 ? new Vector2(sprite.Offset.X, sprite.Offset.Y)
                 : Vector2.Zero;
 
-            // 先按 extrude=0 试（不膨胀，轮廓紧贴 alpha 边界）；
-            // 若结果明显退化（点数太少 / 覆盖率不足），再用 extrude=1 重试并择优。
-            // 实测：某密集网格图集的 28 个切片在 extrude=0 下只产出 6 个点，
-            // 而 extrude=1 能正常闭合；反过来某多切片图集在 extrude=1 下会整体偏移。
-            List<List<Vector2>> contours = GenerateAlphaContours(
-                pixels, textureWidth, textureHeight, sprite, rect, offset, extrude: 0, out bool hasError);
-
-            if (!IsContoursUsable(contours, rectWidth, rectHeight))
+                return BuildOutlineFromPixels(
+                    pixels, textureWidth, textureHeight, rect, offset,
+                    sprite.PixelsToUnits, rectWidth, rectHeight, SpriteNameOf(sprite));
+            }
+            catch (Exception ex)
             {
-                List<List<Vector2>> retry = GenerateAlphaContours(
-                    pixels, textureWidth, textureHeight, sprite, rect, offset, extrude: 1, out _);
-                if (IsContoursUsable(retry, rectWidth, rectHeight))
+                Debug($"{sprite.Name.String}: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// <see cref="BuildOutlineFromAlpha"/> 的核心：给定已解码的 RGBA32 像素，按
+        /// <see cref="AlphaTolerances"/> 逐级尝试并返回第一份**可用**的轮廓。
+        ///
+        /// 抽出来是为了能在没有 <c>ISprite</c> 的情况下直接测降级策略
+        /// （见 <c>SpriteAlphaFallbackTests</c>）——「有像素但提取不出轮廓」这条路径
+        /// 光看代码很难判断，必须有真实像素跑一遍。
+        /// </summary>
+        internal static List<List<Vector2>> BuildOutlineFromPixels(
+            byte[] pixels,
+            int textureWidth,
+            int textureHeight,
+            Rectf rect,
+            Vector2 offset,
+            float pixelsToUnits,
+            float rectWidth,
+            float rectHeight,
+            string spriteName)
+        {
+            bool hasError = false;
+            List<List<Vector2>>? firstNonEmpty = null;
+            foreach (byte tolerance in AlphaTolerances)
+            {
+                // 先按 extrude=0 试（不膨胀，轮廓紧贴 alpha 边界）；
+                // 若结果明显退化（点数太少 / 覆盖率不足），再用 extrude=1 重试并择优。
+                // 实测：某密集网格图集的 28 个切片在 extrude=0 下只产出 6 个点，
+                // 而 extrude=1 能正常闭合；反过来某多切片图集在 extrude=1 下会整体偏移。
+                List<List<Vector2>> contours = GenerateAlphaContours(
+                    pixels, textureWidth, textureHeight, pixelsToUnits, rect, offset,
+                    tolerance, extrude: 0, out hasError);
+
+                if (!IsContoursUsable(contours, rectWidth, rectHeight))
+            {
+                    List<List<Vector2>> retry = GenerateAlphaContours(
+                        pixels, textureWidth, textureHeight, pixelsToUnits, rect, offset,
+                        tolerance, extrude: 1, out _);
+                    if (IsContoursUsable(retry, rectWidth, rectHeight))
+                    {
+                        contours = retry;
+                    }
+                }
+
+                // 只有「可用」才直接采纳并停止降级。仅凭 Count > 0 就返回会卡在
+                // 退化的 3~4 点碎片上，永远试不到更低容差那一档更好的结果。
+                if (IsContoursUsable(contours, rectWidth, rectHeight))
                 {
-                    contours = retry;
+                    if (tolerance != AlphaTolerances[0])
+                    {
+                        Debug($"{spriteName}: alpha 容差 {AlphaTolerances[0]} 不可用，降级到 {tolerance}");
+                    }
+                    return contours;
+                }
+
+                // 各档都不「可用」时，仍然保留第一个非空结果作为兜底：
+                // 退化的轮廓也比「整段丢失」更接近原版行为。
+                if (firstNonEmpty is null && contours.Count > 0)
+                {
+                    firstNonEmpty = contours;
                 }
             }
 
-            if (contours.Count == 0)
+            if (firstNonEmpty is not null)
             {
-                Debug($"empty: {sprite.Name.String} rect=({rect.X:F1},{rect.Y:F1},{rect.Width:F1},{rect.Height:F1}) " +
-                    $"tex={textureWidth}x{textureHeight} hasError={hasError}");
+                Debug($"{spriteName}: 所有容差都只产出退化轮廓，回退到第一份非空结果");
+                return firstNonEmpty;
             }
-            return contours;
+
+            Debug($"empty: {spriteName} rect=({rect.X:F1},{rect.Y:F1},{rect.Width:F1},{rect.Height:F1}) " +
+                $"tex={textureWidth}x{textureHeight} hasError={hasError} " +
+                $"tolerances=[{string.Join(",", AlphaTolerances)}]");
+            return new List<List<Vector2>>();
         }
-        catch (Exception ex)
-        {
-            Debug($"{sprite.Name.String}: {ex.GetType().Name}: {ex.Message}");
-            return null;
-        }
-    }
+
+        private static string SpriteNameOf(ISprite sprite) => sprite.Name.String ?? "?";
 
     private static void Debug(string message)
     {

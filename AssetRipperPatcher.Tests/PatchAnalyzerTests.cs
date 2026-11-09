@@ -168,20 +168,22 @@ public class PatchAnalyzerTests
     /// transpiler 返回值：Harmony 只把返回的 object 当 IEnumerable&lt;CodeInstruction&gt; 用，
     /// 所以 List/数组/IReadOnlyList 都是合法返回类型（实测可跑）。
     /// 老实现按「形状精确相等」判定，会把它们全判死——这条就是那个假报的回归。
+    ///
+    /// 两个 transpiler 挂在同一目标上，按 HRP005 必须显式声明 Priority。
     /// </summary>
     [Fact]
     public async Task Transpiler_returning_concrete_collection_is_accepted()
     {
         List<string> diagnostics = await AnalyzeAsync("""
-            internal static class Patches
-            {
-                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Transpiler)]
-                public static List<CodeInstruction> AsList(IEnumerable<CodeInstruction> instructions) => instructions.ToList();
+                internal static class Patches
+                {
+                    [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Transpiler, Priority = 500)]
+                    public static List<CodeInstruction> AsList(IEnumerable<CodeInstruction> instructions) => instructions.ToList();
 
-                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Transpiler)]
-                public static CodeInstruction[] AsArray(IEnumerable<CodeInstruction> instructions) => instructions.ToArray();
-            }
-            """);
+                    [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Transpiler, Priority = 300)]
+                    public static CodeInstruction[] AsArray(IEnumerable<CodeInstruction> instructions) => instructions.ToArray();
+                }
+                """);
 
         Assert.Empty(diagnostics);
     }
@@ -358,6 +360,53 @@ public class PatchAnalyzerTests
             """);
 
         Assert.Empty(diagnostics);
+    }
+
+    /// <summary>
+    /// HRP005：同一目标 + 同一 PatchType 上挂多个补丁，却都没声明 Priority。
+    /// 现实案例：RepairOutlines 与 FixSpriteSheetCoordinates 都是
+    /// TextureExportCollection.AddSprites 的 Postfix，语义上必须先修轮廓再换算坐标，
+    /// 而注册顺序来自 assembly.GetTypes()，不保证。
+    /// </summary>
+    [Fact]
+    public async Task Same_target_same_kind_without_priority_reports_HRP005()
+    {
+        List<string> diagnostics = await AnalyzeAsync("""
+            internal static class Patches
+            {
+                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Postfix)]
+                public static void First(Target __instance, int a) { }
+
+                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Postfix)]
+                public static void Second(Target __instance, int a) { }
+            }
+            """);
+
+        Assert.Equal(2, diagnostics.Count(d => d.StartsWith("HRP005", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// HRP005 的反面：都显式声明了 Priority → 零诊断。
+    /// 同时锁住「不同 PatchType 不算冲突」（Prefix + Postfix 各一个不该报）。
+    /// </summary>
+    [Fact]
+    public async Task Same_target_with_explicit_priority_is_silent()
+    {
+        List<string> diagnostics = await AnalyzeAsync("""
+            internal static class Patches
+            {
+                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Postfix, Priority = 500)]
+                public static void First(Target __instance, int a) { }
+
+                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Postfix, Priority = 300)]
+                public static void Second(Target __instance, int a) { }
+
+                [PatchMethod(typeof(Target), "OneArg", PatchType = PatchType.Prefix)]
+                public static void OnlyPrefix(Target __instance, int a) { }
+            }
+            """);
+
+        Assert.DoesNotContain(diagnostics, d => d.StartsWith("HRP005", StringComparison.Ordinal));
     }
 
     private async Task<ImmutableArray<Diagnostic>> AnalyzeDiagnosticsAsync(string body)

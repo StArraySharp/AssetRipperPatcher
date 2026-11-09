@@ -15,8 +15,15 @@ internal static class NativePluginsPatch
     /// Harmony Postfix: 导出 Unity 项目完成后，把游戏数据目录 (GameName_Data) 下
     /// Plugins 中的所有子目录（原生库）复制到导出项目的 Assets/Plugins 下。
     /// 源目录为 {GameName_Data}/Plugins，目标为 {输出目录}/ExportedProject/Assets/Plugins。
+    ///
+    /// <para><b>Priority。</b>
+    /// <see cref="LegacyFontPatch.FixLegacyFontsAfterExport"/> 也是
+    /// <c>ExportHandler.Export</c> 的 Postfix，两者互不依赖；显式声明
+    /// <see cref="HarmonyLib.Priority.LowerThanNormal"/> 让它排在字体修复之后，
+    /// 避免执行顺序取决于 <c>assembly.GetTypes()</c>。</para>
     /// </summary>
-    [PatchMethod(typeof(ExportHandler), "Export", PatchType = PatchType.Postfix)]
+    [PatchMethod(typeof(ExportHandler), "Export",
+        PatchType = PatchType.Postfix, Priority = HarmonyLib.Priority.LowerThanNormal)]
     public static void CopyNativePluginsAfterExport(GameData gameData, string outputPath, FileSystem fileSystem)
     {
         try

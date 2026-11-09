@@ -15,6 +15,7 @@ namespace AssetRipperPatcher.Tools;
 /// - HRP002 OverrideIndex 越界（消息列出全部候选签名）
 /// - HRP003 补丁方法签名与 Harmony 注入规则冲突
 /// - HRP004 目标为 public → 可用 nameof 绑定（Info）
+/// - HRP005 同目标同 PatchType 挂多个补丁却未显式声明 Priority
 /// - HRP011 访问器目标不存在 / 种类不符
 /// - HRP012 访问器泛型实参与成员实际类型不符
 /// </summary>
@@ -27,14 +28,19 @@ public sealed class PatchAnalyzer : DiagnosticAnalyzer
     private const string AccessMethodAttributeFullName = "AssetRipperPatcher.Patching.AccessMethodAttribute";
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-        ImmutableArray.Create(Diagnostics.HRP001, Diagnostics.HRP002, Diagnostics.HRP003, Diagnostics.HRP004, Diagnostics.HRP011, Diagnostics.HRP012);
+        ImmutableArray.Create(Diagnostics.HRP001, Diagnostics.HRP002, Diagnostics.HRP003, Diagnostics.HRP004,
+            Diagnostics.HRP005, Diagnostics.HRP011, Diagnostics.HRP012);
 
     public override void Initialize(AnalysisContext context)
     {
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeAttribute, SyntaxKind.Attribute);
-
+        // HRP005 是跨文件判定（同一目标上挂了几个补丁），只能在编译结束时统一做。
+        // RegisterCompilationEndAction 只存在于 CompilationStartAnalysisContext，
+        // 所以必须包一层 RegisterCompilationStartAction。
+        context.RegisterCompilationStartAction(static startContext =>
+            startContext.RegisterCompilationEndAction(AnalyzePatchOrdering));
     }
 
     // 构建编译默认不导入被引用程序集的 private 成员（MetadataImportOptions.Internal），
@@ -144,6 +150,144 @@ public sealed class PatchAnalyzer : DiagnosticAnalyzer
             .Where(a => a.NameEquals?.Name is IdentifierNameSyntax identifier && identifier.Identifier.ValueText == name)
             .Select(a => a.Expression.GetLocation())
             .FirstOrDefault();
+
+    /// <summary>
+    /// 取出 <see cref="PatchMethodAttribute"/> 的两个位置实参（目标类型 / 成员名）。
+    /// 只用于 HRP005 的跨文件分组，解析不出来的条目直接跳过（其余诊断各自报过）。
+    /// </summary>
+    private static bool TryGetPatchTarget(AttributeSyntax attrSyntax, SemanticModel semanticModel,
+        out ITypeSymbol? targetType, out string? memberName, out int overrideIndex, out int patchType, out bool hasPriority)
+    {
+        targetType = null;
+        memberName = null;
+        overrideIndex = 0;
+        patchType = (int)PatchTypeKind.Postfix;
+        hasPriority = false;
+
+        SeparatedSyntaxList<AttributeArgumentSyntax> arguments = attrSyntax.ArgumentList?.Arguments ?? default;
+        var positional = arguments.Where(a => a.NameEquals is null).ToList();
+        if (positional.Count < 2 || positional[0].Expression is not TypeOfExpressionSyntax typeOf)
+        {
+            return false;
+        }
+        targetType = semanticModel.GetTypeInfo(typeOf.Type).Type;
+        if (targetType is null || targetType is IErrorTypeSymbol)
+        {
+            return false;
+        }
+        Optional<object?> nameConstant = semanticModel.GetConstantValue(positional[1].Expression);
+        if (!nameConstant.HasValue || nameConstant.Value is not string name)
+        {
+            return false;
+        }
+        memberName = name;
+
+        foreach (AttributeArgumentSyntax argument in arguments)
+        {
+            if (argument.NameEquals?.Name is not IdentifierNameSyntax identifier)
+            {
+                continue;
+            }
+            Optional<object?> constant = semanticModel.GetConstantValue(argument.Expression);
+            switch (identifier.Identifier.ValueText)
+            {
+                case "Priority":
+                    hasPriority = true;
+                    break;
+                case "PatchType" when constant.HasValue && constant.Value is int typeValue:
+                    patchType = typeValue;
+                    break;
+                // 必须和 AnalyzePatchMethod 一样解析 OverrideIndex，否则这里会把
+                // OverrideIndex = 1 当成 0，把两个不同重载误判成「同一目标」。
+                case "OverrideIndex" when constant.HasValue && constant.Value is int indexValue:
+                    overrideIndex = indexValue;
+                    break;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// HRP005：同一目标 + 同一 PatchType 上挂了多个补丁时，执行顺序取决于 Harmony 的
+    /// <c>priority</c>；未声明 priority 就会退化成「注册顺序」，而注册顺序来自
+    /// <c>assembly.GetTypes()</c>，本就不保证稳定。这里要求这种组合下每个补丁都显式写
+    /// <c>Priority = ...</c>，否则报错。
+    ///
+    /// 现实案例：<c>SpriteOutlineRepairPatch.RepairOutlines</c> 与
+    /// <c>SpriteSingleModePatch.FixSpriteSheetCoordinates</c> 都是
+    /// <c>TextureExportCollection.AddSprites</c> 的 Postfix，语义上前者必须先跑。
+    /// </summary>
+    private static void AnalyzePatchOrdering(CompilationAnalysisContext context)
+    {
+        // 先按语法树收集：CompilationAnalysisContext 拿不到 SyntaxNodeAnalysisContext，
+        // 影子语义模型要走承影视图的 GetSemanticModel(tree)。
+        var entries = new List<(AttributeSyntax Syntax, ITypeSymbol TargetType, string MemberName,
+            int OverrideIndex, int PatchType, bool HasPriority)>();
+
+        foreach (SyntaxTree tree in context.Compilation.SyntaxTrees)
+        {
+            SemanticModel semanticModel = ShadowView.Of(context.Compilation).GetSemanticModel(tree);
+            foreach (AttributeSyntax attrSyntax in tree.GetRoot(context.CancellationToken)
+                .DescendantNodes().OfType<AttributeSyntax>())
+            {
+                if (semanticModel.GetTypeInfo(attrSyntax).Type is not INamedTypeSymbol attrType
+                    || CanonicalSymbol.FullName(attrType) != PatchMethodAttributeFullName)
+                {
+                    continue;
+                }
+                if (TryGetPatchTarget(attrSyntax, semanticModel,
+                    out ITypeSymbol? targetType, out string? memberName, out int overrideIndex,
+                    out int patchType, out bool hasPriority))
+                {
+                    entries.Add((attrSyntax, targetType!, memberName!, overrideIndex, patchType, hasPriority));
+                }
+            }
+        }
+
+        // 解析成真正被补丁的那个重载：同类型的 (method, overrideIndex) 才能分组，
+        // 否则「AddSprites 的两个不同重载」会被误判成同一目标。
+        var resolved = new List<(AttributeSyntax Syntax, IMethodSymbol Target, int PatchType, bool HasPriority)>();
+        foreach (var entry in entries)
+        {
+            List<IMethodSymbol> candidates = CanonicalSymbol.CollectCandidates(entry.TargetType, entry.MemberName);
+            if (entry.OverrideIndex < 0 || entry.OverrideIndex >= candidates.Count)
+            {
+                continue; // HRP002 已经报过
+            }
+            resolved.Add((entry.Syntax, CanonicalSymbol.Sort(candidates)[entry.OverrideIndex],
+                entry.PatchType, entry.HasPriority));
+        }
+
+        foreach (var group in resolved.GroupBy(r => (Target: r.Target, Kind: r.PatchType)))
+        {
+            int count = group.Count();
+            if (count < 2)
+            {
+                continue;
+            }
+            List<(AttributeSyntax Syntax, IMethodSymbol Target, int PatchType, bool HasPriority)> missing =
+                group.Where(r => !r.HasPriority).ToList();
+            if (missing.Count == 0)
+            {
+                continue;
+            }
+
+            string members = string.Join(", ", group.Select(r =>
+                $"{r.Syntax.FirstAncestorOrSelf<MethodDeclarationSyntax>()?.Identifier.ValueText ?? "?"}" +
+                (r.HasPriority ? " (已声明)" : " (未声明)")));
+            string targetSignature = CanonicalSymbol.Describe(group.Key.Target);
+            foreach (var item in missing)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.HRP005,
+                    item.Syntax.GetLocation(),
+                    targetSignature,
+                    group.Key.Kind,
+                    count,
+                    members));
+            }
+        }
+    }
 
     // ---------- PatchMethod ----------
 
@@ -704,6 +848,16 @@ internal static class Diagnostics
         category: "AssetRipperPatcher.Patching",
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HRP005 = new(
+        id: "HRP005",
+        title: "同目标同 PatchType 的多个补丁未显式排序",
+        messageFormat: "{0} 上挂了 {2} 个 PatchType={1} 的补丁，执行顺序取决于 assembly.GetTypes() 的返回次序；"
+            + "每个补丁都必须显式声明 Priority。当前：{3}",
+        category: "AssetRipperPatcher.Patching",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        customTags: [WellKnownDiagnosticTags.CompilationEnd]);
 
     public static readonly DiagnosticDescriptor HRP011 = new(
         id: "HRP011",

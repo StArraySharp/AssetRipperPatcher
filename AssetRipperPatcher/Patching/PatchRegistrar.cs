@@ -13,8 +13,11 @@ public static class PatchRegistrar
 
     public static void RegisterAll(Harmony harmony, Assembly assembly)
     {
+        IReadOnlyList<PatchReport> reports = DescribeAll(assembly);
+        EnsureUnambiguousOrder(reports, static message => new PatchBindingException(message));
+
         int applied = 0;
-        foreach (PatchReport report in DescribeAll(assembly))
+        foreach (PatchReport report in reports)
         {
             if (report.Error is not null || report.Target is null)
             {
@@ -22,7 +25,8 @@ public static class PatchRegistrar
                     $"[{report.Patch.DeclaringType!.Name}.{report.Patch.Name}] {report.Error}");
             }
 
-            HarmonyMethod harmonyMethod = new(report.Patch);
+            // 未显式声明优先级的补丁沿用 Harmony 默认值（-1 → Priority.Normal）。
+            HarmonyMethod harmonyMethod = new(report.Patch, report.Attr.HasPriority ? report.Attr.Priority : -1);
             switch (report.Attr.PatchType)
             {
                 case PatchType.Prefix:
@@ -41,9 +45,37 @@ public static class PatchRegistrar
                     throw new PatchBindingException($"Unknown PatchType: {report.Attr.PatchType}");
             }
             applied++;
-            Console.WriteLine($"[Patch] {DescribeTarget(report.Target)} <- {report.Patch.DeclaringType!.Name}.{report.Patch.Name} ({report.Attr.PatchType})");
+            Console.WriteLine($"[Patch] {DescribeTarget(report.Target)} <- {report.Patch.DeclaringType!.Name}.{report.Patch.Name} " +
+                $"({report.Attr.PatchType}, priority={(report.Attr.HasPriority ? report.Attr.Priority.ToString() : "default")})");
         }
         Console.WriteLine($"[PatchRegistrar] {applied} patch(es) applied.");
+    }
+
+    /// <summary>
+    /// 同一目标 + 同一 <see cref="PatchType"/> 上挂了多个补丁时，执行顺序完全由 Harmony 的
+    /// <c>priority</c> 决定（priority 相同时才退回到注册顺序）。而注册顺序来自
+    /// <c>assembly.GetTypes()</c>，本就不保证稳定。所以这种组合下**必须**每个补丁都显式声明
+    /// <see cref="PatchMethodAttribute.Priority"/>，否则这里直接报错。
+    /// </summary>
+    /// <param name="reports">待检查的补丁解析结果（解析失败的条目会被忽略）。</param>
+    /// <param name="errorFactory">把错误消息包装成目标异常类型（注册期抛绑定异常、测试期抛断言）。</param>
+    public static void EnsureUnambiguousOrder(IReadOnlyList<PatchReport> reports, Func<string, Exception> errorFactory)
+    {
+        IEnumerable<IGrouping<(MethodBase Target, PatchType Kind), PatchReport>> ambiguous = reports
+            .Where(static r => r.Error is null && r.Target is not null)
+            .GroupBy(static r => (r.Target!, r.Attr.PatchType))
+            .Where(static g => g.Count() > 1 && g.Any(static r => !r.Attr.HasPriority));
+
+        foreach (IGrouping<(MethodBase Target, PatchType Kind), PatchReport> group in ambiguous)
+        {
+            string members = string.Join(", ", group.Select(static r =>
+                $"{r.Patch.DeclaringType!.Name}.{r.Patch.Name}" +
+                (r.Attr.HasPriority ? $" (Priority={r.Attr.Priority})" : " (Priority 未声明)")));
+            throw errorFactory(
+                $"{DescribeTarget(group.Key.Target)} 上有 {group.Count()} 个 {group.Key.Kind} 补丁，" +
+                $"执行顺序取决于 assembly.GetTypes() 的返回次序——每个补丁都必须显式声明 [PatchMethod(..., Priority = ...)]：" +
+                $"\n  {members}");
+        }
     }
 
     /// <summary>
