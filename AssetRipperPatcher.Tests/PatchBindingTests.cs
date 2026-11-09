@@ -1,8 +1,7 @@
 using System.Reflection;
 using AssetRipperPatcher.Patching;
 using HarmonyLib;
-using Xunit;
-using Xunit.Abstractions;
+using NUnit.Framework;
 
 namespace AssetRipperPatcher.Tests;
 
@@ -11,45 +10,38 @@ namespace AssetRipperPatcher.Tests;
 /// </summary>
 public class PatchBindingTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public PatchBindingTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
-
     private static Assembly PatcherAssembly => typeof(AssetRipperPatcher.Patching.PatchRegistrar).Assembly;
 
     /// <summary>
     /// 测试 1：全部补丁注解可解析，且输出目标完整签名（人工核对 OverrideIndex 是否指对成员）。
     /// </summary>
-    [Fact]
+    [Test]
     public void All_patch_methods_resolve()
     {
         IReadOnlyList<PatchReport> reports = PatchRegistrar.DescribeAll(PatcherAssembly);
-        Assert.NotEmpty(reports);
+        Assert.That(reports, Is.Not.Empty);
 
         foreach (PatchReport report in reports)
         {
-            _output.WriteLine($"{report.Patch.DeclaringType!.Name}.{report.Patch.Name} ({report.Attr.PatchType}, OverrideIndex={report.Attr.OverrideIndex})");
+            TestContext.Out.WriteLine($"{report.Patch.DeclaringType!.Name}.{report.Patch.Name} ({report.Attr.PatchType}, OverrideIndex={report.Attr.OverrideIndex})");
             if (report.Error is not null)
             {
-                _output.WriteLine($"    ERROR: {report.Error}");
+                TestContext.Out.WriteLine($"    ERROR: {report.Error}");
             }
             else
             {
                 MethodBase target = report.Target!;
                 string parameters = string.Join(", ", target.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name));
-                _output.WriteLine($"    -> {target.DeclaringType!.FullName}.{target.Name}({parameters})");
+                TestContext.Out.WriteLine($"    -> {target.DeclaringType!.FullName}.{target.Name}({parameters})");
             }
-            Assert.Null(report.Error);
+            Assert.That(report.Error, Is.Null);
         }
     }
 
     /// <summary>
     /// 测试 2：用 Harmony 本尊全量绑定——「分析器排序与运行时排序漂移」的兜底。
     /// </summary>
-    [Fact]
+    [Test]
     public void All_patches_bind_with_real_harmony()
     {
         Harmony harmony = new("test.patchbinding." + Guid.NewGuid().ToString("N"));
@@ -60,10 +52,10 @@ public class PatchBindingTests
         {
             MethodBase target = report.Target!;
             HarmonyLib.Patches patches = Harmony.GetPatchInfo(target);
-            Assert.Contains(harmony.Id, patches.Owners);
+            Assert.That(patches.Owners, Does.Contain(harmony.Id));
             var applied = patches.Prefixes.Concat(patches.Postfixes)
                 .Concat(patches.Finalizers).Concat(patches.Transpilers);
-            Assert.Contains(applied, p => p.PatchMethod == report.Patch);
+            Assert.That(applied, Has.Some.Matches<HarmonyLib.Patch>(p => p.PatchMethod == report.Patch));
         }
     }
 
@@ -71,7 +63,7 @@ public class PatchBindingTests
     /// 运行期与编译期必须一致：注册器也用同一规则拒绝「同目标同 kind 未排序」。
     /// 这条是编译期 HRP005 的运行时兜底——分析器万一没跑，启动时也要炸。
     /// </summary>
-    [Fact]
+    [Test]
     public void Ambiguous_order_is_rejected_at_registration()
     {
         IReadOnlyList<PatchReport> reports = PatchRegistrar.DescribeAll(PatcherAssembly);
@@ -83,7 +75,7 @@ public class PatchBindingTests
         InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
             () => PatchRegistrar.EnsureUnambiguousOrder([sample, sample],
                 message => new InvalidOperationException(message)));
-        Assert.Contains("Priority", ex.Message);
+        Assert.That(ex.Message, Does.Contain("Priority"));
 
         // 两个都显式声明 Priority 就放行
         PatchReport high = sample with { Attr = CloneWithPriority(sample.Attr, 500) };
@@ -107,7 +99,7 @@ public class PatchBindingTests
     /// <summary>
     /// 测试 3：全部访问器在 ModuleInitializer 阶段已绑定成功。
     /// </summary>
-    [Fact]
+    [Test]
     public void All_accessors_are_bound()
     {
         List<(string Field, Accessor Accessor)> accessors = new();
@@ -122,11 +114,11 @@ public class PatchBindingTests
             }
         }
 
-        Assert.NotEmpty(accessors);
+        Assert.That(accessors, Is.Not.Empty);
         foreach ((string field, Accessor accessor) in accessors)
         {
-            _output.WriteLine($"{field} ({accessor.GetType().Name}): Bound={accessor.Bound} Error={accessor.BindingError}");
-            Assert.True(accessor.Bound, $"{field} 未绑定: {accessor.BindingError}");
+            TestContext.Out.WriteLine($"{field} ({accessor.GetType().Name}): Bound={accessor.Bound} Error={accessor.BindingError}");
+            Assert.That(accessor.Bound, Is.True, $"{field} 未绑定: {accessor.BindingError}");
         }
     }
 }

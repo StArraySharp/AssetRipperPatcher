@@ -1,7 +1,6 @@
 using System.Numerics;
 using AssetRipperPatcher.Sprites;
-using Xunit;
-using Xunit.Abstractions;
+using NUnit.Framework;
 
 namespace AssetRipperPatcher.Tests;
 
@@ -20,13 +19,6 @@ namespace AssetRipperPatcher.Tests;
 /// </summary>
 public class AlphaToleranceTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public AlphaToleranceTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
-
     /// <summary>抗锯齿圆盘：边缘 1 像素从满值平滑降到 0。</summary>
     private static byte[] MakeSoftCircle(int size, float radius, byte peak)
     {
@@ -66,7 +58,7 @@ public class AlphaToleranceTests
     /// 容差判定是「alpha &gt; tolerance」的严格大于语义。
     /// 峰值恰好 200 的素材在 200 下必须全空（199 才算全部纳入）。
     /// </summary>
-    [Fact]
+    [Test]
     public void Tolerance_is_strictly_greater_than()
     {
         const int size = 48;
@@ -80,18 +72,18 @@ public class AlphaToleranceTests
             }
         }
 
-        _output.WriteLine($"tol=200 -> contours={Outline(flat, size, 200).Count}");
-        _output.WriteLine($"tol=199 -> contours={Outline(flat, size, 199).Count}");
+        TestContext.Out.WriteLine($"tol=200 -> contours={Outline(flat, size, 200).Count}");
+        TestContext.Out.WriteLine($"tol=199 -> contours={Outline(flat, size, 199).Count}");
 
-        Assert.Empty(Outline(flat, size, 200));
-        Assert.NotEmpty(Outline(flat, size, 199));
+        Assert.That(Outline(flat, size, 200), Is.Empty);
+        Assert.That(Outline(flat, size, 199), Is.Not.Empty);
     }
 
     /// <summary>
     /// 254（UI 滑块上限）会把半透明素材整块判成背景。
     /// 这正是不能用 254 当头号容差的原因：Unity 编辑器默认值是 200。
     /// </summary>
-    [Fact]
+    [Test]
     public void Max_tolerance_254_drops_faint_artwork_but_200_keeps_it()
     {
         const int size = 64;
@@ -99,25 +91,25 @@ public class AlphaToleranceTests
 
         int atMax = Outline(faint, size, 254).Count;
         int atDefault = Outline(faint, size, 200).Count;
-        _output.WriteLine($"peak-200 artwork: tol=254 -> {atMax}, tol=200 -> {atDefault}");
+        TestContext.Out.WriteLine($"peak-200 artwork: tol=254 -> {atMax}, tol=200 -> {atDefault}");
 
-        Assert.Equal(0, atMax);
-        Assert.Equal(0, atDefault); // 峰值恰好 200，严格大于语义下同样全空
+        Assert.That(atMax, Is.EqualTo(0));
+        Assert.That(atDefault, Is.EqualTo(0)); // 峰值恰好 200，严格大于语义下同样全空
 
         // 峰值 210 时，编辑器默认值 200 能正常出轮廓，254 依然全空
         byte[] brighter = MakeSoftCircle(size, 24.0F, 210);
         int atMaxBrighter = Outline(brighter, size, 254).Count;
         int atDefaultBrighter = Outline(brighter, size, 200).Count;
-        _output.WriteLine($"peak-210 artwork: tol=254 -> {atMaxBrighter}, tol=200 -> {atDefaultBrighter}");
+        TestContext.Out.WriteLine($"peak-210 artwork: tol=254 -> {atMaxBrighter}, tol=200 -> {atDefaultBrighter}");
 
-        Assert.Equal(0, atMaxBrighter);
-        Assert.NotEmpty(Outline(brighter, size, 200));
+        Assert.That(atMaxBrighter, Is.EqualTo(0));
+        Assert.That(Outline(brighter, size, 200), Is.Not.Empty);
     }
 
     /// <summary>
     /// 254 还会吃掉抗锯齿边缘：同一条软边圆，254 的点数与包围盒覆盖率都明显缩水。
     /// </summary>
-    [Fact]
+    [Test]
     public void Max_tolerance_254_shrinks_anti_aliased_edges()
     {
         const int size = 64;
@@ -128,9 +120,9 @@ public class AlphaToleranceTests
 
         int points254 = at254.Sum(c => c.Count);
         int points200 = at200.Sum(c => c.Count);
-        _output.WriteLine($"points: tol=254 -> {points254}, tol=200 -> {points200}");
+        TestContext.Out.WriteLine($"points: tol=254 -> {points254}, tol=200 -> {points200}");
 
-        Assert.True(points200 > points254,
-            $"编辑器默认值 200 应保留更多轮廓点（200:{points200} vs 254:{points254}）");
+        Assert.That(points200 > points254, Is.True,
+    $"编辑器默认值 200 应保留更多轮廓点（200:{points200} vs 254:{points254}）");
     }
 }

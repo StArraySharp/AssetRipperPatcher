@@ -4,8 +4,7 @@ using AssetRipperPatcher.Tools;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Xunit;
-using Xunit.Abstractions;
+using NUnit.Framework;
 
 namespace AssetRipperPatcher.Tests;
 
@@ -18,13 +17,6 @@ namespace AssetRipperPatcher.Tests;
 /// </summary>
 public class PatchAnalyzerTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public PatchAnalyzerTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
-
     // using 必须整体放在最前面，所以把它们和 Fake 目标类型一起放进 boilerplate；
     // 每个用例只提供补丁类。
     private const string TargetBoilerplate = """
@@ -52,7 +44,7 @@ public class PatchAnalyzerTests
         """;
 
     /// <summary>变异 3：目标名不存在 → HRP001。</summary>
-    [Fact]
+    [Test]
     public async Task Missing_target_member_reports_HRP001()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -63,11 +55,11 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP001", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP001", StringComparison.Ordinal)));
     }
 
     /// <summary>变异 2：OverrideIndex 越界 → HRP002，且消息列出候选。</summary>
-    [Fact]
+    [Test]
     public async Task OverrideIndex_out_of_range_reports_HRP002()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -78,12 +70,14 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string message = Assert.Single(diagnostics, d => d.StartsWith("HRP002", StringComparison.Ordinal));
-        Assert.Contains("[0]", message);
+        List<string> hrp002 = diagnostics.Where(d => d.StartsWith("HRP002", StringComparison.Ordinal)).ToList();
+        Assert.That(hrp002, Has.Count.EqualTo(1));
+        string message = hrp002[0];
+        Assert.That(message, Does.Contain("[0]"));
     }
 
     /// <summary>变异 1：挂钩补丁漏掉目标参数 → HRP003（抓上游加参/删参）。</summary>
-    [Fact]
+    [Test]
     public async Task Hooked_patch_missing_target_parameter_reports_HRP003()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -94,12 +88,12 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, d => d.Contains("\"a\"", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP003", StringComparison.Ordinal)));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.Contains("\"a\"", StringComparison.Ordinal)));
     }
 
     /// <summary>HRP011：访问器目标不存在。</summary>
-    [Fact]
+    [Test]
     public async Task Missing_accessor_member_reports_HRP011()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -110,11 +104,11 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP011", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP011", StringComparison.Ordinal)));
     }
 
     /// <summary>HRP011：成员存在但种类不符（字段 vs 属性）。</summary>
-    [Fact]
+    [Test]
     public async Task Wrong_accessor_kind_reports_HRP011()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -125,11 +119,11 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP011", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP011", StringComparison.Ordinal)));
     }
 
     /// <summary>变异 4：泛型实参比成员实际类型更宽（继承关系）→ HRP012。</summary>
-    [Fact]
+    [Test]
     public async Task Wider_accessor_type_argument_reports_HRP012()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -140,11 +134,11 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP012", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP012", StringComparison.Ordinal)));
     }
 
     /// <summary>正向对照：签名正确的注解不得产生任何 HRP 诊断。</summary>
-    [Fact]
+    [Test]
     public async Task Correct_annotations_produce_no_diagnostics()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -161,7 +155,7 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Empty(diagnostics);
+        Assert.That(diagnostics, Is.Empty);
     }
 
     /// <summary>
@@ -171,7 +165,7 @@ public class PatchAnalyzerTests
     ///
     /// 两个 transpiler 挂在同一目标上，按 HRP005 必须显式声明 Priority。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Transpiler_returning_concrete_collection_is_accepted()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -185,11 +179,11 @@ public class PatchAnalyzerTests
                 }
                 """);
 
-        Assert.Empty(diagnostics);
+        Assert.That(diagnostics, Is.Empty);
     }
 
     /// <summary>transpiler 返回 void → HRP003，消息点名要求 IEnumerable&lt;CodeInstruction&gt;。</summary>
-    [Fact]
+    [Test]
     public async Task Transpiler_returning_void_reports_HRP003()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -200,13 +194,15 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string message = Assert.Single(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal));
-        Assert.Contains("IEnumerable<CodeInstruction>", message);
-        Assert.Contains("void", message);
+        List<string> hrp003 = diagnostics.Where(d => d.StartsWith("HRP003", StringComparison.Ordinal)).ToList();
+        Assert.That(hrp003, Has.Count.EqualTo(1));
+        string message = hrp003[0];
+        Assert.That(message, Does.Contain("IEnumerable<CodeInstruction>"));
+        Assert.That(message, Does.Contain("void"));
     }
 
     /// <summary>transpiler 首参不是 IEnumerable&lt;CodeInstruction&gt; → HRP003（运行时是 NRE）。</summary>
-    [Fact]
+    [Test]
     public async Task Transpiler_with_wrong_first_parameter_reports_HRP003()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -217,14 +213,15 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal) && d.Contains("首参"));
+        Assert.That(diagnostics, Has.Some.Matches<string>(
+                    d => d.StartsWith("HRP003", StringComparison.Ordinal) && d.Contains("首参")));
     }
 
     /// <summary>
     /// transpiler 不接受 __result / __instance / ___field —— Harmony 只按
     /// instructions[, ILGenerator][, MethodBase] 传参，实测多一个参数就 TargetParameterCountException。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Transpiler_with_injected_state_parameter_reports_HRP003()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -236,13 +233,15 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string message = Assert.Single(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal));
-        Assert.Contains("__result", message);
-        Assert.Contains("没有返回值可读", message);
+        List<string> hrp003Injected = diagnostics.Where(d => d.StartsWith("HRP003", StringComparison.Ordinal)).ToList();
+        Assert.That(hrp003Injected, Has.Count.EqualTo(1));
+        string message = hrp003Injected[0];
+        Assert.That(message, Does.Contain("__result"));
+        Assert.That(message, Does.Contain("没有返回值可读"));
     }
 
     /// <summary>PatchType 值超出枚举范围 → HRP003 明确说值无效，而不是笼统的「返回值不合法」。</summary>
-    [Fact]
+    [Test]
     public async Task Invalid_patch_type_value_reports_HRP003()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -253,8 +252,9 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string message = Assert.Single(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal));
-        Assert.Contains("PatchType 值 7 无效", message);
+        List<string> hrp003InvalidType = diagnostics.Where(d => d.StartsWith("HRP003", StringComparison.Ordinal)).ToList();
+        Assert.That(hrp003InvalidType, Has.Count.EqualTo(1));
+        Assert.That(hrp003InvalidType[0], Does.Contain("PatchType 值 7 无效"));
     }
 
     /// <summary>
@@ -262,7 +262,7 @@ public class PatchAnalyzerTests
     /// 谈参数注入没有意义。消息会显式说明检查已跳过，免得被误当成漏检。
     /// （现实里踩过：把 "Export" 打成 "Export2" 后，看到参数名不对却没有红线。）
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Missing_target_skips_parameter_check_and_says_so()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -273,16 +273,18 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string hrp001 = Assert.Single(diagnostics, d => d.StartsWith("HRP001", StringComparison.Ordinal));
-        Assert.Contains("参数注入检查已跳过", hrp001);
-        Assert.DoesNotContain(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal));
+        List<string> hrp001List = diagnostics.Where(d => d.StartsWith("HRP001", StringComparison.Ordinal)).ToList();
+        Assert.That(hrp001List, Has.Count.EqualTo(1));
+        string hrp001 = hrp001List[0];
+        Assert.That(hrp001, Does.Contain("参数注入检查已跳过"));
+        Assert.That(diagnostics, Has.None.Matches<string>(d => d.StartsWith("HRP003", StringComparison.Ordinal)));
     }
 
     /// <summary>
     /// 目标存在但补丁参数名对不上 → HRP003，且诊断位置必须精确落在参数标识符上。
     /// 位置很关键：IDE 靠它把红线画在参数处，画错位置等于没有提示。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Wrong_parameter_name_reports_HRP003_on_the_parameter()
     {
         ImmutableArray<Diagnostic> diagnostics = await AnalyzeDiagnosticsAsync("""
@@ -294,12 +296,16 @@ public class PatchAnalyzerTests
             """);
 
         // 两条 HRP003：参数名对不上 + 挂钩补丁没覆盖目标参数 b；这里只验证前者的定位。
-        Diagnostic hrp003 = Assert.Single(diagnostics, d => d.Id == "HRP003" && d.GetMessage().Contains("renamed"));
-        Assert.Contains("同名参数注入失败", hrp003.GetMessage());
+        List<Diagnostic> hrp003List = diagnostics
+            .Where(d => d.Id == "HRP003" && d.GetMessage().Contains("renamed"))
+            .ToList();
+        Assert.That(hrp003List, Has.Count.EqualTo(1));
+        Diagnostic hrp003 = hrp003List[0];
+        Assert.That(hrp003.GetMessage(), Does.Contain("同名参数注入失败"));
 
         string sourceText = hrp003.Location.SourceTree!.GetText().ToString();
         string slice = sourceText.Substring(hrp003.Location.SourceSpan.Start, hrp003.Location.SourceSpan.Length);
-        Assert.Equal("renamed", slice);
+        Assert.That(slice, Is.EqualTo("renamed"));
     }
 
     /// <summary>
@@ -307,7 +313,7 @@ public class PatchAnalyzerTests
     /// 现实故障：全库绑定从 "Export" 改成 nameof(ExportHandler.Export) 之后，分析器因为
     /// 只认字面量而集体失明 —— 参数名写成 gameData2 也没有任何红线。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task NameOf_binding_still_checks_parameter_names()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -318,13 +324,16 @@ public class PatchAnalyzerTests
             }
             """);
 
-        string hrp003 = Assert.Single(diagnostics, d => d.StartsWith("HRP003", StringComparison.Ordinal)
-            && d.Contains("renamed", StringComparison.Ordinal));
-        Assert.Contains("同名参数注入失败", hrp003);
+        List<string> hrp003List = diagnostics
+            .Where(d => d.StartsWith("HRP003", StringComparison.Ordinal)
+                && d.Contains("renamed", StringComparison.Ordinal))
+            .ToList();
+        Assert.That(hrp003List, Has.Count.EqualTo(1));
+        Assert.That(hrp003List[0], Does.Contain("同名参数注入失败"));
     }
 
     /// <summary>nameof 写法的访问器同样要跑 HRP011/HRP012。</summary>
-    [Fact]
+    [Test]
     public async Task NameOf_binding_still_checks_accessor_types()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -339,13 +348,13 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP012", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, d => d.StartsWith("HRP011", StringComparison.Ordinal)
-            && d.Contains("不是字段", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP012", StringComparison.Ordinal)));
+        Assert.That(diagnostics, Has.Some.Matches<string>(d => d.StartsWith("HRP011", StringComparison.Ordinal)
+            && d.Contains("不是字段", StringComparison.Ordinal)));
     }
 
     /// <summary>nameof 绑定、签名完全对得上 → 零诊断（否则等于把好代码判死）。</summary>
-    [Fact]
+    [Test]
     public async Task NameOf_binding_on_correct_patch_is_silent()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -359,7 +368,7 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Empty(diagnostics);
+        Assert.That(diagnostics, Is.Empty);
     }
 
     /// <summary>
@@ -368,7 +377,7 @@ public class PatchAnalyzerTests
     /// TextureExportCollection.AddSprites 的 Postfix，语义上必须先修轮廓再换算坐标，
     /// 而注册顺序来自 assembly.GetTypes()，不保证。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Same_target_same_kind_without_priority_reports_HRP005()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -382,14 +391,14 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.Equal(2, diagnostics.Count(d => d.StartsWith("HRP005", StringComparison.Ordinal)));
+        Assert.That(diagnostics.Count(d => d.StartsWith("HRP005", StringComparison.Ordinal)), Is.EqualTo(2));
     }
 
     /// <summary>
     /// HRP005 的反面：都显式声明了 Priority → 零诊断。
     /// 同时锁住「不同 PatchType 不算冲突」（Prefix + Postfix 各一个不该报）。
     /// </summary>
-    [Fact]
+    [Test]
     public async Task Same_target_with_explicit_priority_is_silent()
     {
         List<string> diagnostics = await AnalyzeAsync("""
@@ -406,7 +415,7 @@ public class PatchAnalyzerTests
             }
             """);
 
-        Assert.DoesNotContain(diagnostics, d => d.StartsWith("HRP005", StringComparison.Ordinal));
+        Assert.That(diagnostics, Has.None.Matches<string>(d => d.StartsWith("HRP005", StringComparison.Ordinal)));
     }
 
     private async Task<ImmutableArray<Diagnostic>> AnalyzeDiagnosticsAsync(string body)
@@ -427,7 +436,7 @@ public class PatchAnalyzerTests
         ImmutableArray<Diagnostic> compileErrors = compilation.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .ToImmutableArray();
-        Assert.True(compileErrors.IsEmpty, "测试源码本身不合法:\n" + string.Join("\n", compileErrors));
+        Assert.That(compileErrors.IsEmpty, Is.True, "测试源码本身不合法:\n" + string.Join("\n", compileErrors));
 
         ImmutableArray<Diagnostic> diagnostics = await compilation
             .WithAnalyzers([new PatchAnalyzer()])
@@ -435,7 +444,7 @@ public class PatchAnalyzerTests
 
         foreach (Diagnostic diagnostic in diagnostics)
         {
-            _output.WriteLine($"{diagnostic.Id}: {diagnostic.GetMessage()}");
+            TestContext.Out.WriteLine($"{diagnostic.Id}: {diagnostic.GetMessage()}");
         }
         return diagnostics;
     }

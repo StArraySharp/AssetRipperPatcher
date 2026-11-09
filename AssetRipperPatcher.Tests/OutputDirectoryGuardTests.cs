@@ -1,5 +1,5 @@
 using AssetRipperPatcher;
-using Xunit;
+using NUnit.Framework;
 
 namespace AssetRipperPatcher.Tests;
 
@@ -17,75 +17,75 @@ public class OutputDirectoryGuardTests
     private static string P(params string[] parts) =>
         Path.GetFullPath(Path.Combine([Root, .. parts]));
 
-    [Fact]
+    [Test]
     public void Rejects_output_equal_to_input()
     {
         string game = P("games", "MyGame");
-        Assert.False(Program.ValidateOutputDirectory(game, game, out string reason));
-        Assert.Contains("equals input", reason);
+        Assert.That(Program.ValidateOutputDirectory(game, game, out string reason), Is.False);
+        Assert.That(reason, Does.Contain("equals input"));
     }
 
-    [Fact]
+    [Test]
     public void Rejects_output_equal_to_input_ignoring_trailing_separator()
     {
         string game = P("games", "MyGame");
-        Assert.False(Program.ValidateOutputDirectory(game, game + Path.DirectorySeparatorChar, out _));
+        Assert.That(Program.ValidateOutputDirectory(game, game + Path.DirectorySeparatorChar, out _), Is.False);
     }
 
-    [Fact]
+    [Test]
     public void Rejects_output_that_contains_input()
     {
         string game = P("games", "MyGame");
         string parent = P("games");
-        Assert.False(Program.ValidateOutputDirectory(game, parent, out string reason));
-        Assert.Contains("parent of input", reason);
+        Assert.That(Program.ValidateOutputDirectory(game, parent, out string reason), Is.False);
+        Assert.That(reason, Does.Contain("parent of input"));
     }
 
-    [Fact]
+    [Test]
     public void Rejects_output_inside_input()
     {
         string game = P("games", "MyGame");
         string nested = Path.Combine(game, "export");
-        Assert.False(Program.ValidateOutputDirectory(game, nested, out string reason));
-        Assert.Contains("inside input", reason);
+        Assert.That(Program.ValidateOutputDirectory(game, nested, out string reason), Is.False);
+        Assert.That(reason, Does.Contain("inside input"));
     }
 
     /// <summary>删输出目录会连带把输入删掉——必须拒绝。</summary>
-    [Fact]
+    [Test]
     public void Rejects_output_that_would_delete_the_game()
     {
         string game = Path.Combine(P("games"), "MyGame");
-        Assert.False(Program.ValidateOutputDirectory(game, Path.GetPathRoot(game)!, out _));
+        Assert.That(Program.ValidateOutputDirectory(game, Path.GetPathRoot(game)!, out _), Is.False);
     }
 
-    [Fact]
+    [Test]
     public void Rejects_drive_root_and_user_profile()
     {
-        Assert.False(Program.ValidateOutputDirectory(P("games", "MyGame"), Root, out string rootReason));
-        Assert.Contains("drive root", rootReason);
+        Assert.That(Program.ValidateOutputDirectory(P("games", "MyGame"), Root, out string rootReason), Is.False);
+        Assert.That(rootReason, Does.Contain("drive root"));
 
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        Assert.False(Program.ValidateOutputDirectory(P("games", "MyGame"), home, out string homeReason));
-        Assert.Contains("user profile", homeReason);
+        Assert.That(Program.ValidateOutputDirectory(P("games", "MyGame"), home, out string homeReason), Is.False);
+        Assert.That(homeReason, Does.Contain("user profile"));
     }
 
     /// <summary>
     /// 兄弟目录不算包含：<c>C:\games\MyGame2</c> 与 <c>C:\games\MyGame</c>
     /// 仅共享前缀，删前者绝不会碰到后者。边界字符检查就是为了这个。
     /// </summary>
-    [Fact]
+    [Test]
     public void Allows_sibling_directory_sharing_a_name_prefix()
     {
         string game = P("games", "MyGame");
         string sibling = P("games", "MyGame2");
-        Assert.True(Program.ValidateOutputDirectory(game, sibling, out string reason), reason);
+        Assert.That(Program.ValidateOutputDirectory(game, sibling, out string reason), Is.True, reason);
     }
 
-    [Fact]
+    [Test]
     public void Allows_unrelated_output_directory()
     {
         string game = P("games", "MyGame");
         string output = P("exports", "MyGame");
-        Assert.True(Program.ValidateOutputDirectory(game, output, out string reason), reason);
+        Assert.That(Program.ValidateOutputDirectory(game, output, out string reason), Is.True, reason);
     }
 }

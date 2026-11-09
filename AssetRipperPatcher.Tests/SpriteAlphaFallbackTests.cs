@@ -1,8 +1,7 @@
 using System.Numerics;
 using AssetRipperPatcher.Patches;
 using AssetRipperPatcher.Sprites;
-using Xunit;
-using Xunit.Abstractions;
+using NUnit.Framework;
 
 namespace AssetRipperPatcher.Tests;
 
@@ -15,13 +14,6 @@ namespace AssetRipperPatcher.Tests;
 /// </summary>
 public class SpriteAlphaFallbackTests
 {
-    private readonly ITestOutputHelper _output;
-
-    public SpriteAlphaFallbackTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
-
     private const int Size = 64;
 
     /// <summary>抗锯齿圆盘；peak 控制整张图的最大 alpha。</summary>
@@ -57,55 +49,55 @@ public class SpriteAlphaFallbackTests
 
     private int Points(List<List<Vector2>> contours) => contours.Sum(c => c.Count);
 
-    [Fact]
+    [Test]
     public void Opaque_artwork_is_usable_at_the_primary_tolerance()
     {
         List<List<Vector2>> contours = Build(MakeSoftCircle(24.0F, 255));
-        _output.WriteLine($"contours={contours.Count} points={Points(contours)}");
-        Assert.NotEmpty(contours);
-        Assert.True(Points(contours) >= 8, "不透明素材应该产出完整轮廓");
+        TestContext.Out.WriteLine($"contours={contours.Count} points={Points(contours)}");
+        Assert.That(contours, Is.Not.Empty);
+        Assert.That(Points(contours) >= 8, Is.True, "不透明素材应该产出完整轮廓");
     }
 
     /// <summary>
     /// 峰值恰好等于首选容差（200）→ 该档一个实体像素都没有，必须降级而不是返回空。
     /// 这正是「Alpha8 遮罩 / 低峰值光晕」在真实素材里的表现。
     /// </summary>
-    [Fact]
+    [Test]
     public void Faint_artwork_degrades_instead_of_vanishing()
     {
         List<List<Vector2>> contours = Build(MakeSoftCircle(24.0F, 200));
-        _output.WriteLine($"contours={contours.Count} points={Points(contours)}");
-        Assert.NotEmpty(contours);
-        Assert.True(Points(contours) >= 8, "降级后应拿到可用轮廓，而不是空结果");
+        TestContext.Out.WriteLine($"contours={contours.Count} points={Points(contours)}");
+        Assert.That(contours, Is.Not.Empty);
+        Assert.That(Points(contours) >= 8, Is.True, "降级后应拿到可用轮廓，而不是空结果");
     }
 
     /// <summary>
     /// 峰值 60：200 和 128 两档都选不出实体像素，只有 0 档能出轮廓。
     /// 用来锁住「降级要一路降到最低档」。
     /// </summary>
-    [Fact]
+    [Test]
     public void Very_faint_artwork_reaches_the_lowest_tolerance()
     {
         List<List<Vector2>> contours = Build(MakeSoftCircle(24.0F, 60));
-        _output.WriteLine($"contours={contours.Count} points={Points(contours)}");
-        Assert.NotEmpty(contours);
+        TestContext.Out.WriteLine($"contours={contours.Count} points={Points(contours)}");
+        Assert.That(contours, Is.Not.Empty);
     }
 
-    [Fact]
+    [Test]
     public void Fully_transparent_artwork_yields_nothing()
     {
         byte[] empty = new byte[Size * Size * 4];
         List<List<Vector2>> contours = Build(empty);
-        Assert.Empty(contours);
+        Assert.That(contours, Is.Empty);
     }
 
     /// <summary>
     /// 全空输入必须返回空列表而不是 null —— 调用方用 <c>Count &gt; 0</c> 判断，
     /// 返回 null 会让调用方多一条判空分支（而且容易被漏掉）。
     /// </summary>
-    [Fact]
+    [Test]
     public void Result_is_never_null_for_decoded_pixels()
     {
-        Assert.NotNull(Build(new byte[Size * Size * 4]));
+        Assert.That(Build(new byte[Size * Size * 4]), Is.Not.Null);
     }
 }
