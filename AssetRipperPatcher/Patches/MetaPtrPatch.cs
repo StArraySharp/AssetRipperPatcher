@@ -8,8 +8,19 @@ using HarmonyLib;
 namespace AssetRipperPatcher.Patches;
 
 /// <summary>
-/// MetaPtr 构造函数补丁：当 fileID 命中 GuidMapping 映射时，
-/// 把 fileID 重写为 11500000 并替换为映射的 GUID（用于修正跨工程资源引用）。
+/// MetaPtr 构造函数补丁：把「指向已换成 UPM 包的裸 DLL」的脚本引用，
+/// 改写成包里 <c>.cs.meta</c> 的真实引用。
+///
+/// <para><b>改什么。</b>
+/// AssetRipper 导出裸 DLL 时写
+/// <c>{fileID: MD4('s'+0+0+0+ns+name)[0..4], guid: MD5(assemblyName), type: 3}</c>。
+/// 删掉 DLL 后这个 <c>guid</c> 指向不存在的资产，工程里满屏 <c>Missing (Mono Script)</c>，
+/// 而且**不可恢复**——包内程序集的 GUID 是 Unity 首次导入时随机生成的。</para>
+///
+/// <para><b>怎么知道该改哪条。</b>
+/// fileID 是「命名空间 + 类型名」的确定性哈希（不含程序集），所以只要遍历
+/// <see cref="UnityPackageCatalog"/> 里的类型算一遍 fileID 就能反查。
+/// 候选可能跨多个包/版本，用当前工程的 Unity 版本筛掉装不上的包。</para>
 /// </summary>
 internal static class MetaPtrPatch
 {
@@ -24,25 +35,28 @@ internal static class MetaPtrPatch
     /// </summary>
     private const string AnchorDescription = "第一处 ldarg.0（构造函数入口）";
 
+    /// <summary>导出期的 Unity 版本；<see cref="UnityVersion"/> 的默认值表示未知（不做版本筛选）。</summary>
+    internal static UnityVersion ExportVersion { get; set; }
+
     // MetaPtr 是 record struct：主构造 (long,UnityGuid,AssetType) + 显式 (long)。
     // 候选集按参数个数升序：(long) 是 index 0，主构造是 index 1。
     [PatchMethod(typeof(MetaPtr), ".ctor", OverrideIndex = 1, PatchType = PatchType.Transpiler)]
     public static IEnumerable<CodeInstruction> MetaPtr_ctor_Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator, MethodBase __originalMethod)
     {
-        var codes = new List<CodeInstruction>(instructions);
+        List<CodeInstruction> codes = new(instructions);
 
         int anchor = codes.FindIndex(static c => c.opcode == OpCodes.Ldarg_0);
         if (anchor < 0)
         {
             throw new PatchBindingException(
                 $"MetaPtrPatch: 在 {__originalMethod.FullDescription()} 的 IL 中找不到{AnchorDescription}，" +
-                "transpiler 无法插入 GuidMapping 重写逻辑。" +
+                "transpiler 无法插入包内脚本引用重写逻辑。" +
                 (codes.Count == 0 ? "（指令序列为空）" : $"（共 {codes.Count} 条指令）"));
         }
 
         Label continueLabel = generator.DefineLabel();
-        var injected = new List<CodeInstruction>
-        {
+        List<CodeInstruction> injected =
+        [
             new(OpCodes.Ldarga_S, 1), // ref fileID
             new(OpCodes.Ldarga_S, 2), // ref guid
             new(OpCodes.Call, typeof(MetaPtrPatch).GetMethod(nameof(ProcessMetaPtr),
@@ -51,7 +65,7 @@ internal static class MetaPtrPatch
                 [typeof(long).MakeByRefType(), typeof(UnityGuid).MakeByRefType()],
                 null)!),
             new(OpCodes.Br, continueLabel),
-        };
+        ];
         codes[anchor].labels.Add(continueLabel);
         codes.InsertRange(anchor, injected);
 
@@ -60,10 +74,15 @@ internal static class MetaPtrPatch
 
     public static void ProcessMetaPtr(ref long fileID, ref UnityGuid guid)
     {
-        if (GuidMapping.TryGet(fileID, out var newGuid))
+        if (fileID == UnityPackageCatalog.MonoScriptFileId)
         {
-            fileID = 11500000L;
-            guid = newGuid;
+            return; // 已经是包引用，不要重复处理
+        }
+
+        if (UnityPackageCatalog.TryGetScriptGuid(fileID, ExportVersion, out UnityGuid packageGuid, out _))
+        {
+            fileID = UnityPackageCatalog.MonoScriptFileId;
+            guid = packageGuid;
         }
     }
 }
