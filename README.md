@@ -11,7 +11,7 @@ AssetRipper 把 Unity 游戏的资源「搬」成可编辑工程，但它是**�
 
 | 补丁 | 修复的问题 |
 |---|---|
-| **Shader** | 用内置反编译器（[ShaderRipper](../ShaderRipper)）替代占位 shader，输出可编译的 HLSL/GLSL |
+| **Shader** | 用内置反编译器（[ShaderRipper](ShaderRipper)）替代占位 shader，输出可编译的 HLSL/GLSL |
 | **Sprite 网格** | Tight 网格缺失时，用移植自 Unity 的 `SpriteMeshGenerator` 重新生成 vertices/indices |
 | **Sprite 轮廓** | 修复 `outline` / `physicsShape` 坐标系错位、`m_Pivot` 越界、Single/Multiple 模式误判 |
 | **纯 alpha 纹理** | `Alpha8` 纹理导出成白底透明图，而不是全黑 |
@@ -51,10 +51,10 @@ dotnet build AssetRipperPatcher.slnx
 dotnet test  AssetRipperPatcher.slnx
 ```
 
-依赖两个同级仓库：
+依赖两个同级目录的仓库（都以 git submodule 引入，克隆后需要 `git submodule update --init --recursive`）：
 
-- `AssetRipper/` —— git submodule，上游本体
-- `../ShaderRipper/` —— shader 反编译器
+- `AssetRipper/` —— 上游本体，pin 在 2.0.0
+- `ShaderRipper/` —— shader 反编译器，pin 在 tag `v1.2.2`
 
 ## 结构
 

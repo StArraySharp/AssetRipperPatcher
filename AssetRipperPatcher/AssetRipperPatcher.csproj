@@ -52,8 +52,9 @@
     <ItemGroup>
       <ProjectReference Include="..\AssetRipper\Source\AssetRipper.GUI.Web\AssetRipper.GUI.Web.csproj" />
       <!-- The decompiler library, referenced so the patcher can call it in-process
-           instead of spawning ShaderRipper.exe and reading files back. -->
-      <ProjectReference Include="..\..\ShaderRipper\src\ShaderRipper\ShaderRipper.csproj" />
+                 instead of spawning ShaderRipper.exe and reading files back.
+                 ShaderRipper is a git submodule pinned to tag v1.2.2. -->
+            <ProjectReference Include="..\ShaderRipper\src\ShaderRipper\ShaderRipper.csproj" />
     </ItemGroup>
 
     <!-- Publish the library next to the patcher binary, so a build leaves a
@@ -63,7 +64,7 @@
          Build 和 Publish 各挂一个 target：Publish 不会触发 Build 的 AfterTargets，
          而 `dotnet publish` 的产物目录是 $(PublishDir) 而不是 $(OutDir)。 -->
     <PropertyGroup>
-        <ShaderRipperLibDir>$(MSBuildThisFileDirectory)..\..\ShaderRipper\src\ShaderRipper\bin\$(Configuration)\$(TargetFramework)\</ShaderRipperLibDir>
+        <ShaderRipperLibDir>$(MSBuildThisFileDirectory)..\ShaderRipper\src\ShaderRipper\bin\$(Configuration)\$(TargetFramework)\</ShaderRipperLibDir>
     </PropertyGroup>
 
     <ItemGroup>
