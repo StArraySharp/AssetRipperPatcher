@@ -26,12 +26,47 @@ internal static class MonoBehaviourReadPatch
     private static readonly object DiagnosticFileLock = new();
 
     /// <summary>
-    /// 容错读取开关：开启时 SerializableStructure.TryRead 不再因数据不匹配而失败（缺失字段保持默认值）。
+    /// 容错读取开关：开启时 <see cref="SerializableStructure.TryRead"/> 不再因数据不匹配而失败
+    /// （缺失字段保持默认值），并跳过原方法的位置校验。
+    ///
+    /// <para><b>为什么是 ThreadStatic。</b>
+    /// 这是「当前这一次容错重读」的临时状态，不是进程级配置。上游目前是串行读取，
+    /// 但一旦把读取挪进并行（<c>Parallel.For</c> / <c>Task</c>），共享的静态 bool 会让
+    /// 一个线程开启容错后、另一个线程的 <c>TryRead</c> 也跟着跳过位置校验——
+    /// 那是静默的数据损坏，比读取失败更糟。用 ThreadStatic 把作用域钉在调用线程上，
+    /// 顺带保证「谁开的谁关」，不会再出现跨线程泄漏。</para>
     /// </summary>
-    public static bool LenientReadMode;
-    private static bool LenientRetryInProgress;
+    [ThreadStatic]
+    private static bool t_lenientReadMode;
+
+    /// <summary>防重入：容错重读自身也会走 <c>LoadStructure</c> 的 Postfix。</summary>
+    [ThreadStatic]
+    private static bool t_lenientRetryInProgress;
+
+    /// <summary>容错读取的累计统计（供导出结束时的诊断输出）。</summary>
+    private static int s_lenientAttempts;
+    private static int s_lenientSucceeded;
+    private static int s_lenientFailed;
+
     private static readonly HashSet<string> LoggedFailures = new();
     private static readonly object LoggedFailuresLock = new();
+
+    /// <summary>容错读取的累计结果。导出结束时打印，避免「救回来多少条」完全不可见。</summary>
+    public static (int Attempts, int Succeeded, int Failed) LenientStats =>
+        (Volatile.Read(ref s_lenientAttempts), Volatile.Read(ref s_lenientSucceeded), Volatile.Read(ref s_lenientFailed));
+
+    /// <summary>把容错读取的统计写进日志（无论有没有失败都打印一行）。</summary>
+    public static void ReportLenientStats()
+    {
+        (int attempts, int succeeded, int failed) = LenientStats;
+        if (attempts == 0)
+        {
+            return;
+        }
+        Console.WriteLine(
+            $"[MonoBehaviourRead] lenient retry: attempts={attempts} " +
+            $"recovered={succeeded} failed={failed}");
+    }
 
     /// <summary>
     /// Harmony Prefix: 容错模式下，SerializableStructure.TryRead 直接调用 Read 并捕获异常
@@ -43,7 +78,7 @@ internal static class MonoBehaviourReadPatch
     public static bool TryRead_LenientPrefix(SerializableStructure __instance, ref EndianSpanReader reader,
         IMonoBehaviour monoBehaviour, ITypeResolver resolver, ref bool __result)
     {
-        if (!LenientReadMode)
+        if (!t_lenientReadMode)
         {
             return true; // 正常模式，走原方法
         }
@@ -51,9 +86,13 @@ internal static class MonoBehaviourReadPatch
         {
             __instance.Read(ref reader, monoBehaviour.Collection.Version, monoBehaviour.Collection.Flags, resolver);
         }
-        catch
+        catch (Exception ex)
         {
-            // 部分读取：缺失字段保持默认值
+            // 部分读取：缺失字段保持默认值。异常必须可见——静默吞掉会让
+            // 「容错到底救回来的是什么」永远无从判断。
+            Console.WriteLine(
+                $"[MonoBehaviourRead] lenient read partially failed for " +
+                $"'{monoBehaviour.ScriptP?.GetFullName() ?? "?"}': {ex.GetType().Name}: {ex.Message}");
         }
         __result = true; // 容错：不检查 Position != Length
         return false;    // 跳过原方法
@@ -65,18 +104,27 @@ internal static class MonoBehaviourReadPatch
     [PatchMethod(typeof(UnloadedStructure), "LoadStructure", PatchType = PatchType.Postfix)]
     public static void LenientRetryPostfix(UnloadedStructure __instance, ref SerializableStructure? __result)
     {
-        if (__result is not null || LenientRetryInProgress)
+        if (__result is not null || t_lenientRetryInProgress)
         {
             return;
         }
-        LenientRetryInProgress = true;
+        t_lenientRetryInProgress = true;
         try
         {
+            Interlocked.Increment(ref s_lenientAttempts);
             __result = TryLenientRead(__instance);
+            if (__result is not null)
+            {
+                Interlocked.Increment(ref s_lenientSucceeded);
+            }
+            else
+            {
+                Interlocked.Increment(ref s_lenientFailed);
+            }
         }
         finally
         {
-            LenientRetryInProgress = false;
+            t_lenientRetryInProgress = false;
         }
         // 容错也失败：此时才写诊断文件（避免诊断文件刷屏）
         if (__result is null)
@@ -103,7 +151,7 @@ internal static class MonoBehaviourReadPatch
             }
 
             EndianSpanReader reader = new EndianSpanReader(instance.StructureData, mb.Collection.EndianType);
-            LenientReadMode = true;
+            t_lenientReadMode = true;
             try
             {
                 // 与上游 UnloadedStructure.LoadStructure 相同：IAssemblyManager
@@ -117,11 +165,14 @@ internal static class MonoBehaviourReadPatch
             }
             finally
             {
-                LenientReadMode = false;
+                t_lenientReadMode = false;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine(
+                $"[MonoBehaviourRead] lenient retry threw for " +
+                $"'{instance.MonoBehaviour.ScriptP?.GetFullName() ?? "?"}': {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
