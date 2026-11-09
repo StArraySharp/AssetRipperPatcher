@@ -1,0 +1,28 @@
+root = true
+
+# 只作用于本仓库自己的三个工程。子模块（AssetRipper/、ShaderRipper/）各有自己的
+# 格式约定，root=true 会让它们继承这里的设置、把 dotnet format 变成跨仓库重排，
+# 所以逐个工程限定路径。
+[AssetRipperPatcher/**.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = crlf
+insert_final_newline = true
+charset = utf-8
+
+[AssetRipperPatcher.Tools/**.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = crlf
+insert_final_newline = true
+charset = utf-8
+
+[AssetRipperPatcher.Tests/**.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = crlf
+insert_final_newline = true
+charset = utf-8

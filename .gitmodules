@@ -1,3 +1,6 @@
 [submodule "AssetRipper"]
 	path = AssetRipper
 	url = https://github.com/AssetRipper/AssetRipper
+[submodule "ShaderRipper"]
+	path = ShaderRipper
+	url = https://github.com/StArraySharp/ShaderRipper.git
