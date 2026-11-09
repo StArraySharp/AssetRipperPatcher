@@ -61,3 +61,6 @@ AssetRipperPatcher-*.zip
 # Local agent notes
 .workbuddy/
 
+
+# Package harvester cache (multi-GB tarballs; rerun tools/UnityPackageHarvester to refill)
+tools/.cache/

@@ -26,3 +26,12 @@ tab_width = 4
 end_of_line = crlf
 insert_final_newline = true
 charset = utf-8
+
+# 开发期工具工程（UnityPackageHarvester）。
+[tools/**.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = crlf
+insert_final_newline = true
+charset = utf-8

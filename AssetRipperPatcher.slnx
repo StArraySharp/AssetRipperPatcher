@@ -34,4 +34,7 @@
   <Project Path="AssetRipperPatcher/AssetRipperPatcher.csproj" />
   <Project Path="AssetRipperPatcher.Tools/AssetRipperPatcher.Tools.csproj" />
   <Project Path="AssetRipperPatcher.Tests/AssetRipperPatcher.Tests.csproj" />
-</Solution>
+    <!-- 开发期工具：抓 Unity 官方包、生成 UnityPackageCatalog.Generated.cs。
+         放进解决方案是为了让 `dotnet format` / IDE 能覆盖到它（否则缩进无人管）。 -->
+    <Project Path="tools/UnityPackageHarvester/UnityPackageHarvester.csproj" />
+  </Solution>
