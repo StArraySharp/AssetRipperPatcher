@@ -1,6 +1,7 @@
 using AssetRipper.Assets;
 using AssetRipper.Assets.Generics;
 using AssetRipper.Export.UnityProjects.Textures;
+using AssetRipper.Primitives;
 using AssetRipper.SourceGenerated.Classes.ClassID_1006;
 using AssetRipper.SourceGenerated.Classes.ClassID_213;
 using AssetRipper.SourceGenerated.Classes.ClassID_28;
@@ -60,7 +61,17 @@ internal static class SpriteSingleModePatch
     ITextureImporter importer,
     IReadOnlyDictionary<ISprite, ISpriteAtlas?>? textureSpriteInformation)
     {
-        if (importer is null || textureSpriteInformation is null || textureSpriteInformation.Count == 0)
+        if (importer is null)
+        {
+            return;
+        }
+
+        // spritePackingTag 与坐标换算无关，先于所有提前 return 处理：
+        // 它来自原工程，Unity 打开后只要包里没有对应的 Sprite Atlas / packer 策略，
+        // 就会尝试按这个 tag 重新打包，结果通常是 Sprite 在编辑器里位置整体错乱。
+        ClearSpritePackingTag(importer);
+
+        if (textureSpriteInformation is null || textureSpriteInformation.Count == 0)
         {
             return;
         }
@@ -80,6 +91,32 @@ internal static class SpriteSingleModePatch
             // 无需换算；这里只保证 sprites[] 已填好，并清掉不可用的 outline。
             EnsureMultipleEntries(importer, textureSpriteInformation);
         }
+    }
+
+    /// <summary>
+    /// 清空 <c>spritePackingTag</c>。
+    ///
+    /// <para><b>为什么必须清。</b>
+    /// 这个字段记录了「原工程里这张图属于哪个 Sprite Atlas」。导出工程里没有对应的
+    /// <c>SpriteAtlas</c> 资产，也没有 packer 策略，于是 Unity 打开工程时会拿这个 tag
+    /// 去触发图集打包：轻则忽略，重则把 Sprite 按新的图集重新排布，编辑器里位置全乱。
+    /// 清空的语义是「这张图不参与自动打包」，也就是导出工程应有的状态。</para>
+    ///
+    /// <para>字段不存在（老版本 importer）时静默跳过。</para>
+    /// </summary>
+    private static void ClearSpritePackingTag(ITextureImporter importer)
+    {
+        if (!importer.Has_SpritePackingTag())
+        {
+            return;
+        }
+        if (importer.SpritePackingTag.String is not { Length: > 0 } tag)
+        {
+            return;
+        }
+        // Utf8String 不可变：不能改 .String，只能整体换一个新值。
+        importer.SpritePackingTag = Utf8String.Empty;
+        Console.WriteLine($"[Sprite] cleared spritePackingTag '{tag}'");
     }
 
     /// <summary>

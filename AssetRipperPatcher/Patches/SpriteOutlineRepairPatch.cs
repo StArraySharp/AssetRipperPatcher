@@ -515,91 +515,91 @@ internal static class SpriteOutlineRepairPatch
                 ? new Vector2(sprite.Offset.X, sprite.Offset.Y)
                 : Vector2.Zero;
 
-                return BuildOutlineFromPixels(
-                    pixels, textureWidth, textureHeight, rect, offset,
-                    sprite.PixelsToUnits, rectWidth, rectHeight, SpriteNameOf(sprite));
-            }
-            catch (Exception ex)
-            {
-                Debug($"{sprite.Name.String}: {ex.GetType().Name}: {ex.Message}");
-                return null;
-            }
+            return BuildOutlineFromPixels(
+                pixels, textureWidth, textureHeight, rect, offset,
+                sprite.PixelsToUnits, rectWidth, rectHeight, SpriteNameOf(sprite));
         }
-
-        /// <summary>
-        /// <see cref="BuildOutlineFromAlpha"/> 的核心：给定已解码的 RGBA32 像素，按
-        /// <see cref="AlphaTolerances"/> 逐级尝试并返回第一份**可用**的轮廓。
-        ///
-        /// 抽出来是为了能在没有 <c>ISprite</c> 的情况下直接测降级策略
-        /// （见 <c>SpriteAlphaFallbackTests</c>）——「有像素但提取不出轮廓」这条路径
-        /// 光看代码很难判断，必须有真实像素跑一遍。
-        /// </summary>
-        internal static List<List<Vector2>> BuildOutlineFromPixels(
-            byte[] pixels,
-            int textureWidth,
-            int textureHeight,
-            Rectf rect,
-            Vector2 offset,
-            float pixelsToUnits,
-            float rectWidth,
-            float rectHeight,
-            string spriteName)
+        catch (Exception ex)
         {
-            bool hasError = false;
-            List<List<Vector2>>? firstNonEmpty = null;
-            foreach (byte tolerance in AlphaTolerances)
+            Debug($"{sprite.Name.String}: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="BuildOutlineFromAlpha"/> 的核心：给定已解码的 RGBA32 像素，按
+    /// <see cref="AlphaTolerances"/> 逐级尝试并返回第一份**可用**的轮廓。
+    ///
+    /// 抽出来是为了能在没有 <c>ISprite</c> 的情况下直接测降级策略
+    /// （见 <c>SpriteAlphaFallbackTests</c>）——「有像素但提取不出轮廓」这条路径
+    /// 光看代码很难判断，必须有真实像素跑一遍。
+    /// </summary>
+    internal static List<List<Vector2>> BuildOutlineFromPixels(
+        byte[] pixels,
+        int textureWidth,
+        int textureHeight,
+        Rectf rect,
+        Vector2 offset,
+        float pixelsToUnits,
+        float rectWidth,
+        float rectHeight,
+        string spriteName)
+    {
+        bool hasError = false;
+        List<List<Vector2>>? firstNonEmpty = null;
+        foreach (byte tolerance in AlphaTolerances)
+        {
+            // 先按 extrude=0 试（不膨胀，轮廓紧贴 alpha 边界）；
+            // 若结果明显退化（点数太少 / 覆盖率不足），再用 extrude=1 重试并择优。
+            // 实测：某密集网格图集的 28 个切片在 extrude=0 下只产出 6 个点，
+            // 而 extrude=1 能正常闭合；反过来某多切片图集在 extrude=1 下会整体偏移。
+            List<List<Vector2>> contours = GenerateAlphaContours(
+                pixels, textureWidth, textureHeight, pixelsToUnits, rect, offset,
+                tolerance, extrude: 0, out hasError);
+
+            if (!IsContoursUsable(contours, rectWidth, rectHeight))
             {
-                // 先按 extrude=0 试（不膨胀，轮廓紧贴 alpha 边界）；
-                // 若结果明显退化（点数太少 / 覆盖率不足），再用 extrude=1 重试并择优。
-                // 实测：某密集网格图集的 28 个切片在 extrude=0 下只产出 6 个点，
-                // 而 extrude=1 能正常闭合；反过来某多切片图集在 extrude=1 下会整体偏移。
-                List<List<Vector2>> contours = GenerateAlphaContours(
+                List<List<Vector2>> retry = GenerateAlphaContours(
                     pixels, textureWidth, textureHeight, pixelsToUnits, rect, offset,
-                    tolerance, extrude: 0, out hasError);
-
-                if (!IsContoursUsable(contours, rectWidth, rectHeight))
-            {
-                    List<List<Vector2>> retry = GenerateAlphaContours(
-                        pixels, textureWidth, textureHeight, pixelsToUnits, rect, offset,
-                        tolerance, extrude: 1, out _);
-                    if (IsContoursUsable(retry, rectWidth, rectHeight))
-                    {
-                        contours = retry;
-                    }
-                }
-
-                // 只有「可用」才直接采纳并停止降级。仅凭 Count > 0 就返回会卡在
-                // 退化的 3~4 点碎片上，永远试不到更低容差那一档更好的结果。
-                if (IsContoursUsable(contours, rectWidth, rectHeight))
+                    tolerance, extrude: 1, out _);
+                if (IsContoursUsable(retry, rectWidth, rectHeight))
                 {
-                    if (tolerance != AlphaTolerances[0])
-                    {
-                        Debug($"{spriteName}: alpha 容差 {AlphaTolerances[0]} 不可用，降级到 {tolerance}");
-                    }
-                    return contours;
-                }
-
-                // 各档都不「可用」时，仍然保留第一个非空结果作为兜底：
-                // 退化的轮廓也比「整段丢失」更接近原版行为。
-                if (firstNonEmpty is null && contours.Count > 0)
-                {
-                    firstNonEmpty = contours;
+                    contours = retry;
                 }
             }
 
-            if (firstNonEmpty is not null)
+            // 只有「可用」才直接采纳并停止降级。仅凭 Count > 0 就返回会卡在
+            // 退化的 3~4 点碎片上，永远试不到更低容差那一档更好的结果。
+            if (IsContoursUsable(contours, rectWidth, rectHeight))
             {
-                Debug($"{spriteName}: 所有容差都只产出退化轮廓，回退到第一份非空结果");
-                return firstNonEmpty;
+                if (tolerance != AlphaTolerances[0])
+                {
+                    Debug($"{spriteName}: alpha 容差 {AlphaTolerances[0]} 不可用，降级到 {tolerance}");
+                }
+                return contours;
             }
 
-            Debug($"empty: {spriteName} rect=({rect.X:F1},{rect.Y:F1},{rect.Width:F1},{rect.Height:F1}) " +
-                $"tex={textureWidth}x{textureHeight} hasError={hasError} " +
-                $"tolerances=[{string.Join(",", AlphaTolerances)}]");
-            return new List<List<Vector2>>();
+            // 各档都不「可用」时，仍然保留第一个非空结果作为兜底：
+            // 退化的轮廓也比「整段丢失」更接近原版行为。
+            if (firstNonEmpty is null && contours.Count > 0)
+            {
+                firstNonEmpty = contours;
+            }
         }
 
-        private static string SpriteNameOf(ISprite sprite) => sprite.Name.String ?? "?";
+        if (firstNonEmpty is not null)
+        {
+            Debug($"{spriteName}: 所有容差都只产出退化轮廓，回退到第一份非空结果");
+            return firstNonEmpty;
+        }
+
+        Debug($"empty: {spriteName} rect=({rect.X:F1},{rect.Y:F1},{rect.Width:F1},{rect.Height:F1}) " +
+            $"tex={textureWidth}x{textureHeight} hasError={hasError} " +
+            $"tolerances=[{string.Join(",", AlphaTolerances)}]");
+        return new List<List<Vector2>>();
+    }
+
+    private static string SpriteNameOf(ISprite sprite) => sprite.Name.String ?? "?";
 
     private static void Debug(string message)
     {

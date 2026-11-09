@@ -97,10 +97,16 @@ class Program
 
             GameData gameData = exportHandler.LoadAndProcess([fullInput], LocalFileSystem.Instance);
             AppState.CommandLineGameData = gameData;
+
+            // 脚本引用改写要按工程的 Unity 版本筛选包（UGUI 3.x 要求 Unity 6）。
+            // 在这里取一次：MetaPtrPatch 是纯静态的，拿不到 GameData。
+            MetaPtrPatch.ExportVersion = gameData.GameBundle.GetMaxUnityVersion();
+
             exportHandler.Export(gameData, fullOutput, LocalFileSystem.Instance);
             Logger.Info(LogCategory.General, "Export completed.");
             ShaderExportPatch.ReportShaderTally();
             MonoBehaviourReadPatch.ReportLenientStats();
+            NativePluginsPatch.ReportPackageSummary();
             return true;
         }
         catch (Exception ex)

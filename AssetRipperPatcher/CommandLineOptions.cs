@@ -6,6 +6,8 @@ namespace AssetRipperPatcher;
 internal static class CommandLineOptions
 {
     public const string OnlyOption = "--only";
+    public const string OnlyStrictOption = "--only-strict";
+    public const string RemovePackagedDllsOption = "--remove-packaged-dlls";
 
     private const string Usage =
         """
@@ -16,6 +18,12 @@ internal static class CommandLineOptions
                                       --only Sprite
                                       --only Sprite,Texture2D
                                       --only Sprite*
+                                    Dependencies of the matches are exported too,
+                                    so the project has no dangling references.
+
+          --only-strict             With --only: keep only the matched types, without
+                                    following references. Faster, but the output will
+                                    contain dangling guid references.
 
         Without <input> <output> the AssetRipper web UI is launched; the option is
         still honoured there if you pass it explicitly.
@@ -52,6 +60,21 @@ internal static class CommandLineOptions
                 }
                 AppState.CommandLineFilter = AppState.AssetFilter.Parse(value);
                 Console.WriteLine($"[AssetFilter] --only '{value}'");
+                continue;
+            }
+
+            if (arg.Equals(OnlyStrictOption, StringComparison.OrdinalIgnoreCase))
+            {
+                AppState.StrictOnly = true;
+                Console.WriteLine($"[AssetFilter] {OnlyStrictOption}: dependencies will NOT be exported");
+                continue;
+            }
+
+            if (arg.Equals(RemovePackagedDllsOption, StringComparison.OrdinalIgnoreCase))
+            {
+                AppState.RemovePackagedDlls = true;
+                Console.WriteLine($"[Plugins] {RemovePackagedDllsOption}: packaged DLLs will be deleted " +
+                    "(script references to them will break)");
                 continue;
             }
 

@@ -22,6 +22,23 @@ internal static class AppState
     public static AssetFilter? CommandLineFilter;
 
     /// <summary>
+    /// <c>--only-strict</c>：只导出类名匹配的资源，不沿引用做依赖闭包。
+    ///
+    /// <para>默认（false）会把匹配资源的可达依赖一并保留，这样导出的工程没有悬空 guid。
+    /// 打开后得到最小集合，速度更快但引用会断——只适合查看单个类型的导出布局。</para>
+    /// </summary>
+    public static bool StrictOnly;
+
+    /// <summary>
+    /// <c>--remove-packaged-dlls</c>：删掉「其实是 UPM 包产物」的裸 DLL。
+    ///
+    /// <para><b>默认关闭。</b>删掉 DLL 会让工程里所有指向它的脚本引用变成悬空
+    /// （AssetRipper 用 <c>MD5(程序集名)</c> 当 GUID，而包内程序集的 GUID 是
+    /// Unity 导入时随机生成的）。保留 DLL 最多导致 CS0433，是可修复的编译错误。</para>
+    /// </summary>
+    public static bool RemovePackagedDlls;
+
+    /// <summary>
     /// 当前游戏是否为 Unity 6+（Unity 版本主号 &gt;= 6000）。
     /// </summary>
     public static bool IsUnity6
