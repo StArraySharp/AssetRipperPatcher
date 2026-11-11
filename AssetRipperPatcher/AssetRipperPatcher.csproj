@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <Version>1.0.0</Version>
-        <AssemblyVersion>1.0.0.0</AssemblyVersion>
-        <FileVersion>1.0.0.0</FileVersion>
+        <Version>1.0.1</Version>
+                <AssemblyVersion>1.0.1.0</AssemblyVersion>
+                <FileVersion>1.0.1.0</FileVersion>
         <Product>AssetRipperPatcher</Product>
         <Description>Export enhancements for AssetRipper: shader decompilation, sprite mesh/outline repair, alpha textures, legacy fonts.</Description>
     </PropertyGroup>
@@ -54,9 +54,24 @@
              必须进输出目录，否则发布后的 exe 找不到界面。
              TargetPath 把 WebUi\wwwroot\** 平铺成输出里的 wwwroot\**（LinkBase 对 Content 不生效）。 -->
         <ItemGroup>
-            <None Remove="WebUi\wwwroot\**" />
-            <Content Include="WebUi\wwwroot\**\*" TargetPath="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-        </ItemGroup>
+                <None Remove="WebUi\wwwroot\**" />
+                <Content Include="WebUi\wwwroot\**\*" TargetPath="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+            </ItemGroup>
+
+            <!-- 许可证必须随二进制一起分发：GPL-3.0 §6 要求附带许可证副本，
+                 Apache-2.0 §4(a) 要求附带其副本与 NOTICE。
+                 ShaderRipper 是 Apache-2.0 且带 GPL 链接例外，两个文件都要。
+                 源路径都在仓库根，用 Link 把它们放进输出的 licenses\ 下。 -->
+            <ItemGroup>
+                <None Include="..\License" Link="licenses\LICENSE-GPL-3.0.txt"
+                      CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+                <None Include="..\ShaderRipper\LICENSE" Link="licenses\LICENSE-ShaderRipper-Apache-2.0.txt"
+                      CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+                <None Include="..\ShaderRipper\LICENSE-EXCEPTION" Link="licenses\LICENSE-EXCEPTION-ShaderRipper-GPL.txt"
+                      CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+                <None Include="..\docs\THIRD-PARTY-NOTICES.md" Link="licenses\THIRD-PARTY-NOTICES.md"
+                      CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+            </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\AssetRipper\Source\AssetRipper.GUI.Web\AssetRipper.GUI.Web.csproj" />

@@ -333,10 +333,16 @@ internal static class ApiEndpoints
 	private static IResult UpdateSettings(SettingsUpdateRequest body)
 	{
 		string? error = SettingsService.Update(body.Values ?? new Dictionary<string, string?>());
-		return error is null
-			? Results.Json(SettingsService.Get())
-			: Results.BadRequest(new { error });
-	}
+			if (error is null)
+			{
+				return Results.Json(SettingsService.Get());
+			}
+			// 设置被锁是因为已经导入资源（状态冲突），不是请求格式有问题；
+			// 409 让调用方能区分「改个值重试」和「先重置再改」。
+			return SettingsService.IsLocked
+				? Results.Conflict(new { error })
+				: Results.BadRequest(new { error });
+		}
 
 	private static IResult StartLoad(LoadRequest body)
 	{

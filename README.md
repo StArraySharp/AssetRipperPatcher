@@ -209,6 +209,21 @@ public static void DoSomething(GameData gameData, string outputPath, FileSystem 
 本项目为个人使用而维护，不保证对任意游戏通用。补丁的坐标/数值换算都基于对
 具体游戏数据的逆向分析，遇到新游戏可能需要重新校准。
 
+## 文档
+
+- [JSON API](docs/json-api.md) —— 后端接口，也是脚本化调用的入口
+- [第三方声明](docs/THIRD-PARTY-NOTICES.md) —— 链接/内嵌的组件与各自许可
+
 ## License
 
-见 [License](License)。上游 AssetRipper 的许可同样适用。
+本项目以 [GPL-3.0](License) 发布，与上游 AssetRipper 一致。
+
+<a name="shaderripper"></a>**关于 ShaderRipper。** shader 反编译链接了
+[ShaderRipper](https://github.com/StArraySharp/ShaderRipper)（Apache-2.0）。
+Apache-2.0 与 GPL-3.0 本身不兼容（前者的专利终止与赔偿条款构成 GPL-3.0 §7
+禁止的附加限制），所以 ShaderRipper 附带一份
+[GPL-3.0 链接例外](ShaderRipper/LICENSE-EXCEPTION)：允许把它与 GPL-3.0 作品
+链接，并以 GPL-3.0 分发合并结果，而 ShaderRipper 自身仍是 Apache-2.0。
+
+发布二进制时，`licenses/` 目录下会随附 GPL-3.0 全文、Apache-2.0 全文、
+该例外条款以及第三方声明 —— 分发时请保留整个目录。

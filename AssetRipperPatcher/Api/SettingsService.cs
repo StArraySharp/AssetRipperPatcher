@@ -118,13 +118,16 @@ internal static class SettingsService
 		return TryGetText($"desc.{settingKey}") ?? TryGetText($"desc.{shortName}.{valueName}");
 	}
 
-	/// <summary>应用一批键值改动。返回 null 表示成功，否则是错误说明。</summary>
-	public static string? Update(IReadOnlyDictionary<string, string?> values)
-	{
-		if (GameFileLoader.IsLoaded)
+	/// <summary>设置是否因「已导入资源」而不可修改。</summary>
+		public static bool IsLocked => GameFileLoader.IsLoaded;
+
+		/// <summary>应用一批键值改动。返回 null 表示成功，否则是错误说明。</summary>
+		public static string? Update(IReadOnlyDictionary<string, string?> values)
 		{
-			return LocalizedText.Get("settings.locked");
-		}
+			if (IsLocked)
+			{
+				return LocalizedText.Get("settings.locked");
+			}
 
 		foreach ((string key, string? value) in values)
 		{

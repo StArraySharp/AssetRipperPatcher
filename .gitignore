@@ -69,4 +69,5 @@ AssetRipperPatcher/WebUi/ui/node_modules/
 # Package harvester cache (multi-GB tarballs; rerun tools/UnityPackageHarvester to refill)
 tools/.cache/
 
-docs/
+# 技术论文不随仓库发布（docs/ 下其它文档正常跟踪）
+docs/ShaderRipper-技术论文.md
