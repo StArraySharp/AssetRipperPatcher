@@ -102,9 +102,9 @@
         <Message Importance="high" Text="ShaderRipper library -&gt; $(OutDir)ShaderRipper" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
     </Target>
 
-    <Target Name="CopyShaderRipperLibraryOnPublish" AfterTargets="Publish">
-        <Copy SourceFiles="@(ShaderRipperBin)" DestinationFolder="$(PublishDir)ShaderRipper" SkipUnchangedFiles="true" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
-        <Message Importance="high" Text="ShaderRipper library -&gt; $(PublishDir)ShaderRipper" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
-    </Target>
+    <!-- No publish-time copy: `dotnet publish` already drops ShaderRipper.dll at the
+             app root as a normal dependency, so a second copy under `ShaderRipper\`
+             would only duplicate ~57 MB in the release archive. Build keeps the
+             subfolder copy for tooling that looks for it there. -->
 
 </Project>
