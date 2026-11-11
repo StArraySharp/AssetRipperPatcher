@@ -39,6 +39,38 @@ internal static class AppState
     public static bool RemovePackagedDlls;
 
     /// <summary>
+    /// <c>--web</c>：不用原生窗口，直接把 UI 打到默认浏览器。
+    ///
+    /// <para>开发时调界面、或者 WebView2 缺失/异常时用这个。两种模式共用同一套
+    /// Kestrel 端点和前端资源，所以看到的行为完全一致。</para>
+    /// </summary>
+    public static bool OpenUiInBrowser;
+
+    /// <summary>
+    /// <c>--legacy-ui</c>：回退到 AssetRipper 原版 Web UI。
+    ///
+    /// <para>新界面是增量替代，旧的那套仍完整可用；需要对照行为或新界面出问题时的
+    /// 应急出口。</para>
+    /// </summary>
+    public static bool UseLegacyUi;
+
+    /// <summary>
+    /// <c>--port N</c>：固定 UI 监听端口（默认 0 = 随机空闲端口）。
+    ///
+    /// <para>调试时必须固定端口：否则每次启动地址都变，浏览器标签和 DevTools
+    /// 都要重新连。</para>
+    /// </summary>
+    public static int UiPort = 0;
+
+    /// <summary>
+    /// <c>--no-open</c>：启动 UI 但不自动打开窗口/浏览器。
+    ///
+    /// <para>配合 <c>--web --port 5173</c> 可以把它当成普通 Web 服务跑在后台，
+    /// 用任意浏览器调试，热刷新也不受原生窗口限制。</para>
+    /// </summary>
+    public static bool NoAutoOpen;
+
+    /// <summary>
     /// 当前游戏是否为 Unity 6+（Unity 版本主号 &gt;= 6000）。
     /// </summary>
     public static bool IsUnity6

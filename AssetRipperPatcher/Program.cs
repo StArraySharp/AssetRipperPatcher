@@ -6,6 +6,7 @@ using AssetRipper.IO.Files;
 using AssetRipper.Processing;
 using AssetRipperPatcher.Patching;
 using AssetRipperPatcher.Patches;
+using AssetRipperPatcher.WebUi;
 using HarmonyLib;
 
 namespace AssetRipperPatcher;
@@ -14,6 +15,7 @@ class Program
 {
     private static readonly Harmony _harmony = new("starray.unity." + nameof(AssetRipperPatcher));
 
+    [STAThread]
     public static void Main(string[] args)
     {
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -27,6 +29,7 @@ class Program
         // 应用所有补丁：照 [PatchMethod] 注解自动注册（失败即抛，永不静默跳过）
         LocalFeatureNotice.ShowOnce("Shader decompilation", "AssetRipperPatcher");
         PatchRegistrar.RegisterAll(_harmony);
+                PatchRegistrar.RegisterTypeTreeReaders(_harmony);
 
         // 命令行模式：AssetRipperPatcher <游戏路径> <输出路径>，直接导出（触发所有补丁 + 诊断）。
         // 退出码必须反映结果：外面套 `&&` / CI 的脚本只能看到退出码，
@@ -40,8 +43,16 @@ class Program
         // GUI 模式：确保设置文件存在（首次运行会写入推荐默认值），
         // 这样 Web UI 的「设置」页读到的就是同一份配置，而不是内存里的代码默认值。
         AppSettings.LoadOrCreate();
-        WebApplicationLauncher.Launch(args);
-    }
+
+                // --legacy-ui 保留 AssetRipper 原版 Web 界面作为回退；默认走新的 Photino 桌面外壳。
+                if (AppState.UseLegacyUi)
+                {
+                    WebApplicationLauncher.Launch(args);
+                    return;
+                }
+
+                Environment.ExitCode = WebHost.Run(args, browserOnly: AppState.OpenUiInBrowser);
+            }
 
     /// <summary>
     /// 命令行导出模式：直接调用 AssetRipper 的导出 API。
@@ -106,6 +117,7 @@ class Program
             Logger.Info(LogCategory.General, "Export completed.");
             ShaderExportPatch.ReportShaderTally();
             MonoBehaviourReadPatch.ReportLenientStats();
+                        TypeTreeReadPatch.ReportLenientStats();
             NativePluginsPatch.ReportPackageSummary();
             return true;
         }

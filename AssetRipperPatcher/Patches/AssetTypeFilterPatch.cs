@@ -29,8 +29,9 @@ internal static class AssetTypeFilterPatch
     /// 过滤 <see cref="ProjectExporter.CreateCollections(GameBundle)"/> 的返回值。
     /// 补丁挂在 private 方法上，用 <c>__result</c> 改写结果集。
     /// </summary>
-    [PatchMethod(typeof(ProjectExporter), "CreateCollections", PatchType = PatchType.Postfix)]
-    public static void FilterCollections(GameBundle fileCollection, ref List<IExportCollection> __result)
+    [PatchMethod(typeof(ProjectExporter), "CreateCollections", PatchType = PatchType.Postfix,
+            Priority = HarmonyLib.Priority.HigherThanNormal)]
+        public static void FilterCollections(GameBundle fileCollection, ref List<IExportCollection> __result)
     {
         AppState.AssetFilter? filter = AppState.CommandLineFilter;
         if (filter is null)

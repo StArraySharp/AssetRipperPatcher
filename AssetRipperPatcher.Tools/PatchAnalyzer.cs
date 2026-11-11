@@ -444,6 +444,25 @@ public sealed class PatchAnalyzer : DiagnosticAnalyzer
                         "__args 必须是 object[]", DescribeTargetForMessage(target));
                 }
             }
+            else if (name == "__exception")
+            {
+                if (patchType != PatchTypeKind.Finalizer)
+                {
+                    Report(context, Diagnostics.HRP003, parameterLocation,
+                        "__exception 只能用于 finalizer", DescribeTargetForMessage(target));
+                }
+                else if (parameter.RefKind == RefKind.Ref || parameter.RefKind == RefKind.Out)
+                {
+                    Report(context, Diagnostics.HRP003, parameterLocation,
+                        "__exception 不能是 ref/out（Harmony 按值传入待处理的异常）", DescribeTargetForMessage(target));
+                }
+                else if (!IsType(parameter.Type, "System.Exception"))
+                {
+                    Report(context, Diagnostics.HRP003, parameterLocation,
+                        $"__exception 类型必须是 Exception（当前: {parameter.Type.ToDisplayString()}）",
+                        DescribeTargetForMessage(target));
+                }
+            }
             else if (IsIndexParameterName(name, out int index))
             {
                 // __0..__N：按索引引用目标参数

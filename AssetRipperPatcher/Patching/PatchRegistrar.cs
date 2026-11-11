@@ -1,5 +1,7 @@
 using System.Reflection;
 using HarmonyLib;
+using AssetRipper.Import.AssetCreation;
+using AssetRipperPatcher.Patches;
 
 namespace AssetRipperPatcher.Patching;
 
@@ -50,6 +52,35 @@ public static class PatchRegistrar
         }
         Console.WriteLine($"[PatchRegistrar] {applied} patch(es) applied.");
     }
+
+            /// <summary>
+            /// 注册注解表达不了的补丁：目标成员是私有嵌套类型里的重写方法
+            /// （<see cref="TypeTreeObject"/> 的 <c>ReadRelease</c>/<c>ReadEditor</c>），
+            /// 无法用 <see cref="TypeInfo.GetMethod(string)"/> 在编译期命名，只能按反射签名绑定。
+            /// 与注解补丁走同一套"失败即抛"的约定。
+            /// </summary>
+            public static void RegisterTypeTreeReaders(Harmony harmony)
+            {
+                Type treeObject = typeof(TypeTreeObject);
+                foreach (Type nested in treeObject.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    foreach (string name in new[] { "ReadRelease", "ReadEditor" })
+                    {
+                        MethodInfo? target = nested.GetMethod(name,
+                            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                        if (target is null)
+                        {
+                            continue;
+                        }
+                        bool editor = name is "ReadEditor";
+                        MethodInfo patch = editor
+                            ? typeof(TypeTreeReadPatch).GetMethod(nameof(TypeTreeReadPatch.LenientReadEditor))!
+                            : typeof(TypeTreeReadPatch).GetMethod(nameof(TypeTreeReadPatch.LenientReadRelease))!;
+                        harmony.Patch(target, prefix: new HarmonyMethod(patch));
+                        Console.WriteLine($"[Patch] {nested.Name}.{name} <- TypeTreeReadPatch.{patch.Name} (Prefix)");
+                    }
+                }
+            }
 
     /// <summary>
     /// 同一目标 + 同一 <see cref="PatchType"/> 上挂了多个补丁时，执行顺序完全由 Harmony 的

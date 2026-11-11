@@ -17,6 +17,8 @@ AssetRipper 把 Unity 游戏的资源「搬」成可编辑工程，但它是**�
 | **纯 alpha 纹理** | `Alpha8` 纹理导出成白底透明图，而不是全黑 |
 | **旧版动态字体** | 清掉悬空的字体图集引用，让 Unity 按 `m_FontNames` 重新渲染 |
 | **MonoBehaviour 容错** | 结构不匹配时宽松读取并重试，并对重复日志限流 |
+| **TypeTree 容错** | 没有 C# 类接管的资源（如 `PlayerSettings`）类型树不匹配时逐字段恢复，不再整条作废 |
+| **资源去重** | 内容完全相同的资源只导出一份，其余改写为指向它的引用（GUID 与 fileID 一致，不产生 Missing） |
 | **原生插件 / 包清单** | 补齐 `Plugins/` 与 `Packages/manifest.json` 里缺失的条目 |
 
 ## 用法
@@ -29,9 +31,41 @@ AssetRipperPatcher <游戏路径> <输出目录>
 AssetRipperPatcher <游戏路径> <输出目录> --only Sprite,Texture2D
 AssetRipperPatcher <游戏路径> <输出目录> --only Sprite*
 
-# 不带参数则启动 AssetRipper 的 Web UI
+# 不带参数则打开新的桌面界面（Photino 原生窗口）
 AssetRipperPatcher
+
+# 调试界面：固定端口 + 不自动开窗口，用浏览器访问
+AssetRipperPatcher --web --port 5199 --no-open
+
+# 回退到 AssetRipper 原版 Web UI
+AssetRipperPatcher --legacy-ui
 ```
+
+### 桌面界面
+
+默认启动的是基于 **Photino.NET + Fluent 2** 的桌面界面：
+
+- 原生窗口里跑 WebView2，后端是进程内的 Kestrel（只绑定 `127.0.0.1`）
+- 前端是原生 HTML/CSS/JS + [Fluent 2 web components](https://github.com/microsoft/fluentui)，无框架
+- 数据走 `/api/*` 的 JSON 端点，图片/音频/模型/字体走二进制端点
+
+两者共用同一套 HTTP 端点，所以**任何界面问题都可以用 `--web` 在浏览器里复现**并用 DevTools 调试。
+
+界面特性：
+
+- **中英双语**：右上角按钮切换，文案由后端 `/api/text` 统一下发（选项显示名与说明同源），语言状态存在后端
+- **原生文件选择器**：选择游戏目录/输出目录走 [NativeFileDialog](https://github.com/StArraySharp/NativeFileDialog) 的系统对话框，不依赖 WebView2 的文件 API
+- **设置项说明**：每个下拉选项选中后会显示该值的作用（复刻原版 WebUI 的 option-description 行为）
+- **窄窗口适配**：960×640 起所有视图可用，资源详情面板在窄屏下变为可关闭的下方抽屉
+
+| 参数 | 作用 |
+|---|---|
+| `--web` | 不创建原生窗口，改用默认浏览器打开 |
+| `--port <N>` | 固定监听端口（默认 0 = 随机空闲端口） |
+| `--no-open` | 不自动打开窗口或浏览器（配合 `--web` 可当后台服务跑） |
+| `--legacy-ui` | 回退到 AssetRipper 原版 Web UI |
+
+WebView2 缺失时会自动降级到浏览器模式，不会静默崩溃。
 
 导出配置读程序目录下的 `AssetRipper.Settings.json`，命令行与 Web UI 共用同一份。
 **文件不存在时会自动创建**，并写入一组面向「导出可编辑 Unity 工程」的默认值：
@@ -64,9 +98,23 @@ AssetRipperPatcher/
   Patching/         注解、注册器、确定性重载排序
   Sprites/          移植自 Unity 的 SpriteUtility + SpriteMeshGenerator
   Shader/           shader 导出器
+  Api/              新桌面界面的 JSON 端点（资源/设置/日志/导入导出/文案/对话框）
+  WebUi/            Photino 宿主 + wwwroot 前端资源
+    wwwroot/        HTML/CSS/JS，lib/fluent.js 是打包好的 Fluent 2 组件
+    ui/             前端构建入口（仅在升级 Fluent 时需要 npm install）
 AssetRipperPatcher.Tools/   Roslyn 分析器：编译期校验 [PatchMethod] 注解
 AssetRipperPatcher.Tests/   运行期绑定自检 + 分析器回归 + 移植算法单测（NUnit）
 tools/UnityPackageHarvester/ 开发期工具：抓 Unity 官方包，生成 UnityPackageCatalog.Generated.cs
+```
+
+### 重建前端 bundle
+
+`WebUi/wwwroot/lib/fluent.js` 是已提交的构建产物，只有升级 Fluent 时才需要重新打包：
+
+```bash
+cd AssetRipperPatcher/WebUi/ui
+npm install
+npm run build      # -> ../wwwroot/lib/fluent.js
 ```
 
 ### Unity 包目录

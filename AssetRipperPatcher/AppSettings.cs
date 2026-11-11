@@ -79,4 +79,7 @@ internal static class AppSettings
     {
         return Path.Join(LocalFileSystem.ExecutingDirectory, SerializedSettings.DefaultFileName);
     }
+
+        /// <summary>设置文件路径（供 UI 显示「配置文件在哪」）。</summary>
+        public static string SettingsFilePath => GetSettingsFilePath();
 }

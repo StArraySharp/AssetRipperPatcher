@@ -61,6 +61,12 @@ AssetRipperPatcher-*.zip
 # Local agent notes
 .workbuddy/
 
+# UI build inputs (npm 依赖体积大；构建产物 wwwroot/lib/fluent.js 已提交，
+# 只有要升级 Fluent 版本时才需要 npm install 重新打包)
+AssetRipperPatcher/WebUi/ui/node_modules/
+
 
 # Package harvester cache (multi-GB tarballs; rerun tools/UnityPackageHarvester to refill)
 tools/.cache/
+
+docs/

@@ -69,6 +69,15 @@ public sealed class ShaderDisassemblyExporter : ShaderExporterBase
 		}
 	}
 
+	/// <summary>
+	/// 把反汇编结果写进流里（不落盘），供 UI 预览使用。
+	/// 与 <see cref="Export"/> 的区别只是不经过 <see cref="FileSystem"/>。
+	/// </summary>
+	public void ExportRawText(IShader shader, Stream stream)
+	{
+		ExportBinary(shader, stream, ShaderExporterInstantiator);
+	}
+
 	private static void ExportBinary(IShader shader, Stream stream, Func<GPUPlatform, ShaderTextExporter> exporterInstantiator)
 	{
 		if (shader.Has_ParsedForm())

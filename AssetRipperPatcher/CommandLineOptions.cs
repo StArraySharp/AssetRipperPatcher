@@ -8,26 +8,35 @@ internal static class CommandLineOptions
     public const string OnlyOption = "--only";
     public const string OnlyStrictOption = "--only-strict";
     public const string RemovePackagedDllsOption = "--remove-packaged-dlls";
+        public const string WebOption = "--web";
+        public const string LegacyUiOption = "--legacy-ui";
+        public const string PortOption = "--port";
+        public const string NoOpenOption = "--no-open";
 
-    private const string Usage =
-        """
-        Usage: AssetRipperPatcher <input> <output> [options]
+        private const string Usage =
+            """
+            Usage: AssetRipperPatcher <input> <output> [options]
 
-          --only <Type[,Type...]>   Only export assets whose class name matches
-                                    (case-insensitive, '*' wildcard), e.g.
-                                      --only Sprite
-                                      --only Sprite,Texture2D
-                                      --only Sprite*
-                                    Dependencies of the matches are exported too,
-                                    so the project has no dangling references.
+              --only <Type[,Type...]>   Only export assets whose class name matches
+                                        (case-insensitive, '*' wildcard), e.g.
+                                          --only Sprite
+                                          --only Sprite,Texture2D
+                                          --only Sprite*
+                                        Dependencies of the matches are exported too,
+                                        so the project has no dangling references.
 
-          --only-strict             With --only: keep only the matched types, without
-                                    following references. Faster, but the output will
-                                    contain dangling guid references.
+              --only-strict             With --only: keep only the matched types, without
+                                        following references. Faster, but the output will
+                                        contain dangling guid references.
 
-        Without <input> <output> the AssetRipper web UI is launched; the option is
-        still honoured there if you pass it explicitly.
-        """;
+            Without <input> <output> the desktop UI opens in a native window.
+
+              --web                     Serve the UI and open it in the default browser
+                                        instead of a native window (useful for DevTools).
+              --legacy-ui               Launch the original AssetRipper web UI instead.
+              --port <N>                Listen on a fixed port (default: any free port).
+              --no-open                 Do not open a window or browser automatically.
+            """;
 
     /// <summary>
     /// 解析并吃掉 <c>--only</c> 参数；返回剩余参数。
@@ -77,6 +86,47 @@ internal static class CommandLineOptions
                     "(script references to them will break)");
                 continue;
             }
+
+                        if (arg.Equals(WebOption, StringComparison.OrdinalIgnoreCase))
+                        {
+                            AppState.OpenUiInBrowser = true;
+                            continue;
+                        }
+
+                        if (arg.Equals(LegacyUiOption, StringComparison.OrdinalIgnoreCase))
+                        {
+                            AppState.UseLegacyUi = true;
+                            continue;
+                        }
+
+                        if (arg.Equals(NoOpenOption, StringComparison.OrdinalIgnoreCase))
+                        {
+                            AppState.NoAutoOpen = true;
+                            continue;
+                        }
+
+                        if (arg.Equals(PortOption, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out int port) || port is < 0 or > 65535)
+                            {
+                                Fail($"{PortOption} requires a port number (0-65535)");
+                                return [];
+                            }
+                            AppState.UiPort = port;
+                            i++;
+                            continue;
+                        }
+
+                        if (arg.StartsWith(PortOption + "=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!int.TryParse(arg[(PortOption.Length + 1)..], out int port) || port is < 0 or > 65535)
+                            {
+                                Fail($"{PortOption} requires a port number (0-65535)");
+                                return [];
+                            }
+                            AppState.UiPort = port;
+                            continue;
+                        }
 
             // 支持 --only=Value 这种写法
             int eq = arg.IndexOf('=');

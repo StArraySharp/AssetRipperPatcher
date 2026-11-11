@@ -19,7 +19,10 @@
       <PackageReference Include="Lib.Harmony" Version="2.4.2" />
       <!-- Sprite 轮廓生成的三角化：libtess2 的 C# 移植（MIT），对应 Unity 原版的外部依赖 libtess2。 -->
       <PackageReference Include="LibTessDotNet" Version="1.1.15" />
+      <PackageReference Include="NativeFileDialog" Version="1.0.0" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+      <!-- 桌面外壳：Photino.NET 只是原生窗口 + WebView2 宿主，界面本身是本地网页。 -->
+      <PackageReference Include="Photino.NET" Version="4.0.16" />
     </ItemGroup>
 
     <!-- 自检测试项目需要访问 internal 类型（Patch 类、Program 等）。 -->
@@ -33,9 +36,7 @@
          不要再额外加静态 <Analyzer Include=...> —— 同一个 dll 从两条路径进来会让每条
          诊断报两遍。 -->
     <ItemGroup>
-      <ProjectReference Include="..\AssetRipperPatcher.Tools\AssetRipperPatcher.Tools.csproj"
-                        OutputItemType="Analyzer"
-                        ReferenceOutputAssembly="false" />
+      <ProjectReference Include="..\AssetRipperPatcher.Tools\AssetRipperPatcher.Tools.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <!-- Plugins/ holds Unity Editor scripts that go into an unpacked game
@@ -48,6 +49,14 @@
         <None Remove="Plugins\**" />
         <Content Include="Plugins\**\*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
+
+        <!-- 新 Web UI 的前端资源（HTML/CSS/JS + 打包好的 Fluent 组件）。
+             必须进输出目录，否则发布后的 exe 找不到界面。
+             TargetPath 把 WebUi\wwwroot\** 平铺成输出里的 wwwroot\**（LinkBase 对 Content 不生效）。 -->
+        <ItemGroup>
+            <None Remove="WebUi\wwwroot\**" />
+            <Content Include="WebUi\wwwroot\**\*" TargetPath="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\AssetRipper\Source\AssetRipper.GUI.Web\AssetRipper.GUI.Web.csproj" />
@@ -73,23 +82,14 @@
     </ItemGroup>
 
     <Target Name="CopyShaderRipperLibrary" AfterTargets="Build">
-        <Copy SourceFiles="@(ShaderRipperBin)"
-              DestinationFolder="$(OutDir)ShaderRipper"
-              SkipUnchangedFiles="true"
-              Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
-        <Warning Text="ShaderRipper.dll not found at $(ShaderRipperLibDir); build that project first."
-                 Condition="!Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
-        <Message Importance="high" Text="ShaderRipper library -> $(OutDir)ShaderRipper"
-                 Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Copy SourceFiles="@(ShaderRipperBin)" DestinationFolder="$(OutDir)ShaderRipper" SkipUnchangedFiles="true" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Warning Text="ShaderRipper.dll not found at $(ShaderRipperLibDir); build that project first." Condition="!Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Message Importance="high" Text="ShaderRipper library -&gt; $(OutDir)ShaderRipper" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
     </Target>
 
     <Target Name="CopyShaderRipperLibraryOnPublish" AfterTargets="Publish">
-        <Copy SourceFiles="@(ShaderRipperBin)"
-              DestinationFolder="$(PublishDir)ShaderRipper"
-              SkipUnchangedFiles="true"
-              Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
-        <Message Importance="high" Text="ShaderRipper library -> $(PublishDir)ShaderRipper"
-                 Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Copy SourceFiles="@(ShaderRipperBin)" DestinationFolder="$(PublishDir)ShaderRipper" SkipUnchangedFiles="true" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
+        <Message Importance="high" Text="ShaderRipper library -&gt; $(PublishDir)ShaderRipper" Condition="Exists('$(ShaderRipperLibDir)ShaderRipper.dll')" />
     </Target>
 
 </Project>

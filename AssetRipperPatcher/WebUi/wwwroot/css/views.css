@@ -1,0 +1,1239 @@
+/* 各视图专属样式：欢迎页 / 资源表格 / 详情面板 / 文件树 / 设置 / 日志。 */
+
+/* ---------- 欢迎页 ---------- */
+
+.welcome {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    padding: 0 clamp(28px, 7vw, 96px);
+    overflow: auto;
+}
+
+/* 背景光晕：让空界面不显得死板，纯装饰所以 pointer-events: none */
+.welcome__glow {
+    position: absolute;
+    top: -18%;
+    left: 12%;
+    width: 620px;
+    height: 620px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(76 194 255 / 16%), transparent 62%);
+    pointer-events: none;
+    filter: blur(6px);
+}
+
+.welcome h1 {
+    position: relative;
+    margin: 0 0 14px;
+    font-size: clamp(30px, 4vw, 46px);
+    line-height: 1.12;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+}
+
+.welcome .accent {
+    background: linear-gradient(100deg, #4cc2ff 10%, #7ee7c1 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.welcome__lead {
+    position: relative;
+    max-width: 58ch;
+    margin: 0 0 26px;
+    font-size: 15px;
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.welcome__actions {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.welcome__drop {
+    position: relative;
+    margin-top: 22px;
+    padding: 22px;
+    border: 1px dashed var(--colorNeutralStroke1, #3a3a3a);
+    border-radius: 10px;
+    max-width: 560px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+
+.welcome__drop.is-over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--colorNeutralForeground1, #f0f0f0);
+}
+
+.welcome__facts {
+    position: relative;
+    display: flex;
+    gap: 28px;
+    margin: 30px 0 0;
+    flex-wrap: wrap;
+}
+
+.welcome__facts div {
+    min-width: 92px;
+}
+
+.welcome__facts dt {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.welcome__facts dd {
+    margin: 2px 0 0;
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 资源表格 ---------- */
+
+.split {
+    /* 详情列宽：拖动值可能大于容器，必须再夹一次，
+       否则左列会塌成 0，详情直接画到窗口外面。 */
+    --detail-clamped: min(clamp(260px, var(--detail-width, 34%), 100%), calc(100% - 340px));
+
+    flex: 1;
+    display: grid;
+    /* 三列：表格 / 分隔条 / 详情。列数写死成 3，
+       否则 display:none 的分隔条会让详情掉进 0 宽的那列。 */
+    grid-template-columns: minmax(0, 1fr) 6px var(--detail-clamped);
+    /* 行必须显式限高：默认 auto 会让表格按内容高度撑开（几万行 → 上万像素），
+       溢出的内容会盖在详情面板和整页上。 */
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    position: relative;
+    /* 网格列一旦算错，宁可裁掉也不要画出容器。 */
+    overflow: hidden;
+}
+
+/* 未选中资源：详情整块不占位。列宽必须是 0（而不是只隐藏元素），
+   否则表格右侧会留一片空白，还有一条竖排的占位文字。 */
+.split:not(.has-selection) {
+    grid-template-columns: minmax(0, 1fr) 0 0;
+}
+
+.split:not(.has-selection) .split__gutter {
+    display: none;
+}
+
+.split:not(.has-selection) .detail {
+    display: none;
+}
+
+/* 分隔条：可左右拖动调整详情宽度 */
+.split__gutter {
+    position: relative;
+    border: 0;
+    padding: 0;
+    background: var(--colorNeutralStroke3, #232323);
+    cursor: col-resize;
+    transition: background 120ms var(--ease);
+}
+
+.split__gutter::after {
+    /* 视觉上只有 1px，但可点区域是整条 6px，避免难抓。 */
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    background: var(--colorNeutralStroke2, #2b2b2b);
+    transition: background 120ms var(--ease);
+}
+
+.split__gutter:hover::after,
+.split__gutter.is-dragging::after {
+    background: var(--accent);
+}
+
+/* 拖动时锁住全局光标，避免划过 iframe/表格时闪回默认箭头 */
+body.is-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.table-wrap {
+    position: relative;
+    overflow: auto;
+    min-width: 0;
+}
+
+.grid {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+
+.grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    background: var(--colorNeutralBackground2, #1b1b1b);
+    border-bottom: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* 只有真正可排序的列才是按钮外观。大小 / 尺寸等列不参与排序，
+   给它们 pointer 光标会误导用户去点。 */
+.grid thead th[data-sort] {
+    cursor: pointer;
+}
+
+.grid thead th[data-sort]:hover {
+    color: var(--colorNeutralForeground1, #f0f0f0);
+}
+
+.grid thead th.is-sorted::after {
+    content: " ↓";
+    color: var(--accent);
+}
+
+.grid thead th.is-sorted.is-asc::after {
+    content: " ↑";
+}
+
+.grid tbody tr {
+    cursor: default;
+}
+
+.grid tbody tr:hover {
+    background: var(--colorNeutralBackground1Hover, #232323);
+}
+
+.grid tbody tr.is-selected {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.grid tbody td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--colorNeutralStroke3, #232323);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 320px;
+}
+
+.grid td.col-num {
+    font-variant-numeric: tabular-nums;
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.type-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: var(--colorNeutralBackground4, #333);
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.type-pill--texture {
+    background: color-mix(in srgb, #7ee7c1 20%, transparent);
+    color: #9ef0d0;
+}
+
+.type-pill--sprite {
+    background: color-mix(in srgb, #ffc86b 20%, transparent);
+    color: #ffd89b;
+}
+
+.type-pill--mesh {
+    background: color-mix(in srgb, #b592ff 22%, transparent);
+    color: #cdb6ff;
+}
+
+.type-pill--shader {
+    background: color-mix(in srgb, #ff9d9d 20%, transparent);
+    color: #ffbdbd;
+}
+
+.type-pill--audio {
+    background: color-mix(in srgb, #6bb6ff 20%, transparent);
+    color: #a8d3ff;
+}
+
+.empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.empty[hidden] {
+    display: none;
+}
+
+/* ---------- 详情面板 ---------- */
+
+.detail {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    padding: 14px;
+    border-left: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    background: var(--colorNeutralBackground2, #1b1b1b);
+}
+
+/* 详情内容区必须能伸缩，否则 pre 只能吃到内容高度，
+   代码视图就撑不满整块面板。 */
+.detail__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+}
+
+.detail__placeholder {
+    margin: auto;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    font-size: 13px;
+}
+
+.detail__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.detail__close {
+    display: none;
+    margin-left: auto;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--colorNeutralBackground3, #141414);
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.detail__close:hover {
+    color: var(--colorNeutralForeground1, #f0f0f0);
+    border-color: var(--colorNeutralStroke1, #3a3a3a);
+}
+
+.detail__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-all;
+}
+
+.detail__subtitle {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.detail__tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 4px 11px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--colorNeutralBackground3, #141414);
+    color: var(--colorNeutralForeground2, #d0d0d0);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.tab-btn:hover {
+    border-color: var(--colorNeutralStroke1, #3a3a3a);
+}
+
+.tab-btn.is-active {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: #bfe9ff;
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.preview-image {
+    display: block;
+    max-width: 100%;
+    max-height: 320px;
+    margin: 0 auto;
+    object-fit: contain;
+    border-radius: 6px;
+    /* 棋盘格背景，透明 PNG 不会被误认为白底 */
+    background-color: #1a1a1a;
+    background-image:
+        linear-gradient(45deg, #232323 25%, transparent 25%),
+        linear-gradient(-45deg, #232323 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #232323 75%),
+        linear-gradient(-45deg, transparent 75%, #232323 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.preview-meta {
+    margin: 8px 0 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.props {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.props th {
+    width: 38%;
+    padding: 5px 8px 5px 0;
+    text-align: left;
+    font-weight: 500;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    white-space: nowrap;
+    vertical-align: top;
+}
+
+.props td {
+    padding: 5px 0;
+    word-break: break-all;
+}
+
+.detail__text {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    border-radius: 6px;
+    background: var(--colorNeutralBackground3, #141414);
+    border: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    font: 12px/1.5 "Cascadia Code", "Consolas", ui-monospace, monospace;
+    white-space: pre;
+    tab-size: 4;
+}
+
+/* ---------- 文件树 ---------- */
+
+.tree-view {
+    flex: 1;
+    overflow: auto;
+    padding: 14px 16px;
+}
+
+.tree-node {
+    --indent: 0px;
+}
+
+.tree-node__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 8px 5px calc(8px + var(--indent));
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tree-node__row:hover {
+    background: var(--colorNeutralBackground1Hover, #232323);
+}
+
+.tree-node__row.is-selected {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.tree-node__chevron {
+    width: 14px;
+    flex: none;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    transition: rotate 120ms var(--ease);
+}
+
+.tree-node.is-open > .tree-node__row .tree-node__chevron {
+    rotate: 90deg;
+}
+
+.tree-node__icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.tree-node__label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tree-node__count {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.tree-node__children {
+    display: none;
+}
+
+.tree-node.is-open > .tree-node__children {
+    display: block;
+}
+
+/* ---------- 设置 ---------- */
+
+.settings {
+    flex: 1;
+    overflow: auto;
+    --settings-pad-x: clamp(16px, 4vw, 40px);
+    padding: 20px var(--settings-pad-x) 0;
+}
+
+.settings__banner {
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    background: color-mix(in srgb, #ffc86b 14%, transparent);
+    border: 1px solid color-mix(in srgb, #ffc86b 34%, transparent);
+    color: #ffd89b;
+}
+
+.settings__group {
+    margin-bottom: 22px;
+    padding: 18px 20px;
+    border-radius: 10px;
+    background: var(--colorNeutralBackground2, #1b1b1b);
+    border: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+}
+
+.settings__group h2 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.settings__row {
+    display: grid;
+    grid-template-columns: minmax(180px, 300px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: center;
+    padding: 9px 0;
+    border-top: 1px solid var(--colorNeutralStroke3, #232323);
+}
+
+.settings__row:first-of-type {
+    border-top: 0;
+}
+
+.settings__label {
+    font-size: 13px;
+}
+
+.settings__hint {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.settings__control {
+    /* 控件必须占满第二列并左对齐，否则 grid 的默认 stretch/居中对齐
+       会把复选框推到列中间，看起来像悬空。 */
+    display: flex;
+    align-items: center;
+    justify-self: stretch;
+    min-width: 0;
+}
+
+.settings__control fluent-dropdown,
+.settings__control fluent-text-input {
+    min-width: 260px;
+}
+
+/* 保存栏吸底。必须用不透明背景 + 上边框：
+   半透明渐变在低分辨率下会让下面的设置行透出来，看着像按钮压住了内容。 */
+.settings__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    gap: 10px;
+    margin: 0 calc(-1 * var(--settings-pad-x));
+    padding: 12px var(--settings-pad-x) 16px;
+    background: var(--colorNeutralBackground3, #141414);
+    border-top: 1px solid var(--colorNeutralStroke3, #232323);
+}
+
+/* ---------- 日志 ---------- */
+
+.log {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.log__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    background: var(--colorNeutralBackground2, #1b1b1b);
+}
+
+.log__toolbar fluent-text-input {
+    width: 280px;
+}
+
+.log__list {
+    flex: 1;
+    overflow: auto;
+    padding: 8px 12px 16px;
+    font: 12px/1.55 "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+.log__row {
+    display: grid;
+    grid-template-columns: 62px 62px minmax(0, 1fr);
+    gap: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.log__row:hover {
+    background: var(--colorNeutralBackground1Hover, #232323);
+}
+
+.log__time {
+    color: #6f6f6f;
+}
+
+.log__level {
+    text-transform: lowercase;
+    font-weight: 600;
+}
+
+.log__row--warning .log__level {
+    color: #ffc86b;
+}
+
+.log__row--error .log__level {
+    color: #ff8080;
+}
+
+.log__row--info .log__level {
+    color: #6fb6ff;
+}
+
+.log__row--debug .log__level,
+.log__row--verbose .log__level {
+    color: #8f8f8f;
+}
+
+.log__message {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.log__empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---------- 进度块 ---------- */
+
+.progress-block {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: var(--colorNeutralBackground3, #141414);
+    border: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+}
+
+.progress-block[hidden] {
+    display: none;
+}
+
+.progress-block__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.progress-block__row span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#progress-percent {
+    font-variant-numeric: tabular-nums;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+/* 下拉选择：settings 里的 enum 控件用原生 select（Fluent 的 fluent-dropdown 需要
+   option 子元素并且交互较重，设置页用原生 select 更稳、也更好键盘操作）。 */
+.settings__select {
+    min-width: 260px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--colorNeutralStroke1, #3a3a3a);
+    background: var(--colorNeutralBackground1, #212121);
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+}
+
+.settings__select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.settings__select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ---------- 对话框 ---------- */
+
+.dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    background: rgb(0 0 0 / 55%);
+    backdrop-filter: blur(2px);
+    animation: overlay-in 120ms var(--ease);
+}
+
+@keyframes overlay-in {
+    from {
+        opacity: 0;
+    }
+}
+
+.dialog {
+    width: min(520px, calc(100vw - 64px));
+    padding: 22px 24px 18px;
+    border-radius: 12px;
+    background: var(--colorNeutralBackground1, #212121);
+    border: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+}
+
+.dialog__title {
+    margin: 0 0 14px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.dialog__field {
+    width: 100%;
+}
+
+.dialog__error {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: #ff8f8f;
+}
+
+.dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.dialog__message {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.dialog--confirm {
+    width: min(460px, calc(100vw - 64px));
+}
+
+.card .field {
+    display: block;
+    width: 100%;
+    margin-top: 14px;
+}
+
+
+
+
+
+
+/* ============================================================
+   低分辨率 / 窄窗口适配
+   ------------------------------------------------------------
+   目标：960×640（Photino 的 SetMinSize）下所有视图都可用。
+   策略：面板可折叠、表格列按优先级隐藏、设置行改为上下堆叠。
+   ============================================================ */
+
+.titlebar__spacer {
+    flex: 1;
+}
+
+.lang-switch {
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+    background: var(--colorNeutralBackground3, #141414);
+    color: var(--colorNeutralForeground2, #d0d0d0);
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    flex: none;
+}
+
+.lang-switch:hover {
+    border-color: var(--colorNeutralStroke1, #3a3a3a);
+    color: var(--colorNeutralForeground1, #f0f0f0);
+}
+
+.panel__hint {
+    margin: 0;
+    padding: 0 8px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+/* ---------- 侧栏信息卡 ----------
+   各视图左栏除了标题还会给一组「有用的事实」，否则只有一句话太空。 */
+
+.side-info {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 2px 8px 4px;
+}
+
+.side-info__section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.side-info__section-title {
+    margin: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--colorNeutralForeground4, #7a7a7a);
+}
+
+.side-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+}
+
+.side-facts > div {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    padding: 2px 0;
+}
+
+.side-facts dt {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.side-facts dd {
+    flex: none;
+    margin: 0;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--colorNeutralForeground1, #f0f0f0);
+}
+
+.side-facts dd.is-muted {
+    color: var(--colorNeutralForeground3, #9a9a9a);
+}
+
+.side-facts dd.is-warn {
+    color: #ffc86b;
+}
+
+.side-facts dd.is-error {
+    color: #ff8f8f;
+}
+
+.side-facts dd.is-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+/* 侧栏里的小标签（例如锁定状态） */
+.side-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: var(--colorNeutralBackground4, #333);
+    color: var(--colorNeutralForeground2, #d0d0d0);
+}
+
+.side-tag.is-warn {
+    background: color-mix(in srgb, #ffc86b 16%, transparent);
+    color: #ffd89b;
+}
+
+.side-tag.is-ok {
+    background: color-mix(in srgb, #7ee7c1 16%, transparent);
+    color: #9ef0d0;
+}
+
+.side-note {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    background: var(--colorNeutralBackground3, #141414);
+    border: 1px solid var(--colorNeutralStroke3, #232323);
+}
+
+/* 类列表下方的汇总块，加一条分隔线跟列表分开 */
+.side-info--footer {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--colorNeutralStroke3, #232323);
+}
+
+/* 设置：枚举控件 + 选中项说明 */
+
+.settings__enum {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+
+.settings__option-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--colorNeutralForeground3, #9a9a9a);
+    /* 说明文字换行而不是撑破布局 */
+    overflow-wrap: anywhere;
+}
+
+.settings__name {
+    display: block;
+    font-size: 13px;
+}
+
+/* 导出页：输入框与「浏览」按钮同一行 */
+
+.field-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.field-row .field {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.field-row fluent-button {
+    flex: none;
+}
+
+.check-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-size: 13px;
+    user-select: none;
+}
+
+.preview-audio {
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* ---------- 窄窗口 ---------- */
+
+@media (max-width: 1180px) {
+    :root {
+        --panel-width: 210px;
+    }
+
+    /* 详情面板在窄屏下收窄，表格优先显示名称与类型 */
+    .split {
+        grid-template-columns: minmax(0, 1fr) 6px minmax(240px, 30%);
+    }
+
+    /* 未选中时依然不占位 */
+    .split:not(.has-selection) {
+        grid-template-columns: minmax(0, 1fr) 0 0;
+    }
+}
+
+@media (max-width: 1000px) {
+    :root {
+        --rail-width: 64px;
+        --panel-width: 0px;
+    }
+
+    /* 第二栏在窄屏下隐藏：信息密度让位给主内容 */
+    .panel {
+        display: none;
+    }
+
+    .app {
+        grid-template-columns: var(--rail-width) minmax(0, 1fr);
+        grid-template-areas:
+            "title title"
+            "nav   main";
+    }
+
+    .titlebar__brand {
+        min-width: 0;
+    }
+
+    .titlebar__status {
+        max-width: 38%;
+    }
+
+    /* 集合列是最可省的，先隐藏 */
+    .grid .col-coll {
+        display: none;
+    }
+
+    .split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .split:not(.has-selection) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* 抽屉模式下不需要分隔条：宽度由窗口决定 */
+    .split__gutter {
+        display: none;
+    }
+
+    /* 详情改为抽屉式：完全不占表格高度，浮在下方 60% 处 */
+    .detail {
+        display: none;
+    }
+
+    .split.has-selection .detail {
+        display: flex;
+        position: absolute;
+        inset: auto 0 0 0;
+        height: min(60%, 420px);
+        z-index: 5;
+        border-top: 1px solid var(--colorNeutralStroke2, #2b2b2b);
+        box-shadow: 0 -12px 32px rgb(0 0 0 / 45%);
+        background: var(--colorNeutralBackground2, #1b1b1b);
+    }
+
+    .split.has-selection .detail__close {
+        display: block;
+    }
+
+    .settings__row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .settings__control {
+        justify-self: stretch;
+    }
+
+    .settings__select,
+    .settings__control fluent-text-input {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 820px) {
+    /* 更低：连尺寸列也省掉，表格只留名称 / 类型 / 大小 */
+    .grid .col-dim {
+        display: none;
+    }
+
+    .rail__item span:last-child {
+        font-size: 10px;
+    }
+
+    .welcome {
+        padding: 0 20px;
+    }
+
+    .card {
+        width: calc(100% - 24px);
+        margin: 12px auto;
+        padding: 18px;
+    }
+
+    .log__toolbar fluent-text-input {
+        width: 140px;
+    }
+}
+
+/* 高度不足时（640 这类），压缩竖直方向留白 */
+
+@media (max-height: 720px) {
+    :root {
+        --titlebar-height: 38px;
+    }
+
+    .welcome h1 {
+        font-size: clamp(24px, 3.2vw, 34px);
+        margin-bottom: 10px;
+    }
+
+    .welcome__lead {
+        margin-bottom: 18px;
+        font-size: 13.5px;
+    }
+
+    .welcome__drop {
+        margin-top: 16px;
+        padding: 16px;
+    }
+
+    .welcome__facts {
+        margin-top: 20px;
+    }
+
+    .card {
+        margin: 14px auto;
+        padding: 18px 20px 20px;
+    }
+
+    .settings {
+        --settings-pad-x: clamp(12px, 3vw, 28px);
+        padding: 14px var(--settings-pad-x) 0;
+    }
+
+    .settings__group {
+        padding: 14px 16px;
+        margin-bottom: 16px;
+    }
+}
+
+/* Fluent 自定义元素尺寸兜底（默认 display:inline 会让 width/height 失效） */
+
+fluent-text-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+fluent-button,
+fluent-anchor-button {
+    flex: none;
+}
+
+/* fluent-checkbox 自身尺寸正确，但不能覆盖它的 width/height */
+fluent-checkbox {
+    flex: none;
+}
+
+/* 加载更多按钮 */
+
+.load-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(100% - 24px);
+    margin: 14px auto;
+    /* Fluent button 内部有 slot，文本默认靠左，这里强制居中 */
+    text-align: center;
+}
+
+.load-more::part(control) {
+    justify-content: center;
+    width: 100%;
+}

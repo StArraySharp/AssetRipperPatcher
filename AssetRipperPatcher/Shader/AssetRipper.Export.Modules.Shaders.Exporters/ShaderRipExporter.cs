@@ -34,47 +34,93 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
     public override bool Export(IExportContainer container, IUnityObjectBase asset,
                                 string path, FileSystem fileSystem)
     {
-        if (asset is not IShader shader)
+            Interlocked.Increment(ref _calls);
+            if (TryProduce(asset, out string? text))
+            {
+                using Stream stream = fileSystem.File.Create(path);
+                using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+                writer.Write(text);
+                Interlocked.Increment(ref _ok);
+                return true;
+            }
+
+            Interlocked.Increment(ref _fallback);
             return Fallback(container, asset, path, fileSystem);
-
-        Interlocked.Increment(ref _calls);
-        ShaderResult? result = null;
-        try
-        {
-            ShaderModel? model = ShaderModelBridge.From(shader, PlatformExporter);
-            if (model != null) result = ShaderDecompiler.Translate(model);
-            else Interlocked.Increment(ref _nullModel);
-        }
-        catch (Exception e)
-        {
-            Interlocked.Increment(ref _threw);
-            Console.WriteLine($"[ShaderRipper] {shader.Name}: {e.GetType().Name}: {e.Message}");
         }
 
-        if (result is { Ok: true })
+        private static int _calls, _ok, _fallback, _nullModel, _threw;
+
+        /// <summary>
+        /// 把 shader 反编译成 ShaderLab 文本，供 UI 预览使用（不落盘）。
+        /// 与 <see cref="Export"/> 走同一个 <see cref="TryProduce"/>，
+        /// 所以预览看到的内容与导出到磁盘的文件逐字节一致。
+        /// </summary>
+        /// <returns>成功时返回文本；两条路径都失败时返回 null。</returns>
+        public static string? TryDecompile(IUnityObjectBase asset)
         {
-            using Stream stream = fileSystem.File.Create(path);
-            using var writer = new StreamWriter(stream, new UTF8Encoding(false));
-            writer.Write(result.ShaderLab);
-            Interlocked.Increment(ref _ok);
-            return true;
+            return TryProduce(asset, out string? text) ? text : null;
         }
 
-        Interlocked.Increment(ref _fallback);
-        if (result != null && result.Notes.Count > 0 && _reported++ < 10)
-            Console.WriteLine($"[ShaderRipper] {shader.Name}: {string.Join("; ", result.Notes)}");
+        /// <summary>
+        /// The one place the shader text is produced, shared by export and preview.
+        /// ShaderRipper first (full decompile); on failure the GLSL disassembly is
+        /// rendered into memory as the fallback, matching what
+        /// <see cref="Fallback"/> would have written to disk.
+        /// </summary>
+        private static bool TryProduce(IUnityObjectBase asset, out string? text)
+        {
+            text = null;
+            if (asset is not IShader shader)
+                return false;
 
-        return Fallback(container, asset, path, fileSystem);
-    }
+            try
+            {
+                ShaderModel? model = ShaderModelBridge.From(shader, PlatformExporter);
+                if (model == null)
+                {
+                    Interlocked.Increment(ref _nullModel);
+                }
+                else
+                {
+                    ShaderResult result = ShaderDecompiler.Translate(model);
+                    if (result.Ok && !string.IsNullOrEmpty(result.ShaderLab))
+                    {
+                        text = result.ShaderLab;
+                        return true;
+                    }
+                    if (result.Notes.Count > 0 && _reported++ < 10)
+                        Console.WriteLine($"[ShaderRipper] {shader.Name}: {string.Join("; ", result.Notes)}");
+                }
+        }
+            catch (Exception e)
+            {
+                Interlocked.Increment(ref _threw);
+                Console.WriteLine($"[ShaderRipper] {shader.Name}: {e.GetType().Name}: {e.Message}");
+            }
 
-    private static int _calls, _ok, _fallback, _nullModel, _threw;
+            // 退回反汇编：把 GLSL 包在 GLSLPROGRAM 里，至少能看到真实程序。
+            try
+            {
+                using MemoryStream stream = new();
+                new ShaderDisassemblyExporter().ExportRawText(shader, stream);
+                string raw = Encoding.UTF8.GetString(stream.ToArray());
+                if (string.IsNullOrWhiteSpace(raw)) return false;
+                text = raw;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ShaderRipper] disassembly failed for {shader.Name}: {e.GetType().Name}: {e.Message}");
+                return false;
+            }
+        }
 
-    /// <summary>Called once the export finishes, so a silent failure is still visible.</summary>
-    public static void ReportTally()
-    {
-        Console.WriteLine($"[ShaderRipper] export tally: calls={_calls} ok={_ok} " +
-                          $"fallback={_fallback} nullModel={_nullModel} threw={_threw}");
-    }
+            /// <summary>Called once the export finishes, so a silent failure is still visible.</summary>
+            public static void ReportTally()
+            {
+                Console.WriteLine($"[ShaderRipper] export tally: calls={_calls} ok={_ok} " +
+                                  $"fallback={_fallback} nullModel={_nullModel} threw={_threw}");
+            }
 
     /// <summary>
     /// The text exporters <see cref="ShaderWriter"/> needs.  They are never used to
