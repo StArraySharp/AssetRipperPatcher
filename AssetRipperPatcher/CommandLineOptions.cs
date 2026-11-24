@@ -7,6 +7,7 @@ internal static class CommandLineOptions
 {
     public const string OnlyOption = "--only";
     public const string OnlyStrictOption = "--only-strict";
+    public const string ShaderAsmOption = "--shader-asm";
     public const string RemovePackagedDllsOption = "--remove-packaged-dlls";
         public const string WebOption = "--web";
         public const string LegacyUiOption = "--legacy-ui";
@@ -28,6 +29,8 @@ internal static class CommandLineOptions
               --only-strict             With --only: keep only the matched types, without
                                         following references. Faster, but the output will
                                         contain dangling guid references.
+
+              --shader-asm              Also export raw shader subprograms such as DXBC.
 
             Without <input> <output> the desktop UI opens in a native window.
 
@@ -84,6 +87,12 @@ internal static class CommandLineOptions
                 AppState.RemovePackagedDlls = true;
                 Console.WriteLine($"[Plugins] {RemovePackagedDllsOption}: packaged DLLs will be deleted " +
                     "(script references to them will break)");
+                continue;
+            }
+
+            if (arg.Equals(ShaderAsmOption, StringComparison.OrdinalIgnoreCase))
+            {
+                AppState.ShaderAsm = true;
                 continue;
             }
 

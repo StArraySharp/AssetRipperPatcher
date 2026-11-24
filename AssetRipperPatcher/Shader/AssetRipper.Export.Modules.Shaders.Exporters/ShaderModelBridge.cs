@@ -10,10 +10,13 @@ using AssetRipper.SourceGenerated.Classes.ClassID_48;
 using AssetRipper.SourceGenerated.Extensions;
 using AssetRipper.SourceGenerated.Extensions.Enums.Shader;
 using AssetRipper.SourceGenerated.Subclasses.SerializedPass;
+using AssetRipper.SourceGenerated.Subclasses.SerializedPlayerSubProgram;
 using AssetRipper.SourceGenerated.Subclasses.SerializedProgram;
 using AssetRipper.SourceGenerated.Subclasses.SerializedProgramParameters;
 using AssetRipper.SourceGenerated.Subclasses.SerializedTagMap;
+using AssetRipper.SourceGenerated.Subclasses.TextureParameter;
 using ShaderRipper;
+using BlobTextureParameter = AssetRipper.Export.Modules.Shaders.ShaderBlob.Parameters.TextureParameter;
 
 namespace AssetRipperPatcher.Shader.AssetRipper.Export.Modules.Shaders.Exporters;
 
@@ -109,6 +112,68 @@ internal static class ShaderModelBridge
         // A shader with no program still has a structure worth writing, so the
         // model only fails when there is neither.
         return model.Payloads.Count > 0 || model.SubShaders.Count > 0 ? model : null;
+    }
+
+    /// <summary>
+    /// Program blob index -> parameter blob index, for layouts that store the two
+    /// separately (Unity 6).  A program with no split gets -1.
+    ///
+    /// <para>The binary exporter uses this to pair a DXBC payload with the reflection
+    /// that belongs to the same variant, which is what the reconstructed RDEF needs
+    /// to name its constant buffers.</para>
+    /// </summary>
+    public static IReadOnlyDictionary<(int ProgramType, uint BlobIndex), int> GetParameterBlobIndices(IShader shader)
+    {
+        Dictionary<(int, uint), int> map = new();
+        if (!shader.Has_ParsedForm())
+        {
+            return map;
+        }
+
+        foreach (var subShader in shader.ParsedForm.SubShaders)
+        {
+            foreach (var pass in subShader.Passes)
+            {
+                foreach (var program in Programs(pass))
+                {
+                    if (program == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        foreach (var (variant, parameterIndex) in PlayerVariants(program))
+                        {
+                            var key = ((int)variant.GpuProgramType, variant.BlobIndex);
+                            if (!map.TryAdd(key, parameterIndex) && map[key] != parameterIndex)
+                                map[key] = -1;
+                        }
+                    }
+                    catch
+                    {
+                        // The same table is also read by the translator, which has its
+                        // own diagnostics; a partial map is enough for the sidecars.
+                    }
+                }
+            }
+        }
+
+        return map;
+    }
+
+    private static IEnumerable<(ISerializedPlayerSubProgram Variant, int ParameterIndex)> PlayerVariants(
+        ISerializedProgram program)
+    {
+        if (!program.Has_PlayerSubPrograms()) yield break;
+        for (int group = 0; group < program.PlayerSubPrograms.Count; group++)
+        {
+            var variants = program.PlayerSubPrograms[group];
+            var indices = program.Has_ParameterBlobIndices() && group < program.ParameterBlobIndices.Count
+                ? program.ParameterBlobIndices[group] : null;
+            for (int i = 0; i < variants.Count; i++)
+                yield return (variants[i], indices != null && i < indices.Count ? unchecked((int)indices[i]) : -1);
+        }
     }
 
     /// <summary>
@@ -224,28 +289,29 @@ internal static class ShaderModelBridge
                     // shader 级的完整 $Globals 表：只有一个变体引用到的成员才会出现在
                     // 该变体自己的反射里，而这张表列的是整块布局。
                     ShaderConstantBufferInfo? common = CommonGlobals(program, nameByIndex);
+                    IEnumerable<ITextureParameter> commonTextures = program.Has_CommonParameters()
+                        ? program.CommonParameters.TextureParams : [];
 
                     // Has_PlayerSubPrograms() 只看版本字段是否存在，不看有没有数据。
                     // 空表时必须退回 SubPrograms，否则整个程序表丢失、反射全空。
-                    var players = program.GetPlayerSubPrograms();
-                    if (players.Count > 0)
+                    bool hasPlayerVariants = false;
+                    foreach (var (sp, paramIndex) in PlayerVariants(program))
                     {
-                        var paramIndices = program.GetParameterBlobIndices();
-                        for (int i = 0; i < players.Count; i++)
-                        {
-                            var sp = players[i];
-                            // 参数块索引与 blob 索引不是同一个数：校验和只由 program 的字节决定，
-                            // 参数表是另一段。用错索引会读到别的块的中间，反射全废。
-                            int paramIndex = i < paramIndices.Count ? (int)paramIndices[i] : -1;
-                            AddSubProgram(into, sp.BlobIndex, paramIndex, sp.KeywordIndices,
-                                Reflection(blobs, sp.BlobIndex, paramIndex), common);
-                        }
+                        hasPlayerVariants = true;
+                        AddSubProgram(into, sp.BlobIndex, sp.GpuProgramType, paramIndex, sp.KeywordIndices,
+                            Reflection(blobs, sp.BlobIndex, sp.GpuProgramType, paramIndex), common,
+                            commonTextures, nameByIndex);
                     }
-                    else
+                    if (!hasPlayerVariants)
                     {
                         foreach (var sp in program.SubPrograms)
-                            AddSubProgram(into, sp.BlobIndex, -1, sp.KeywordIndices,
-                                Reflection(blobs, sp.BlobIndex, -1), common);
+                        {
+                            IEnumerable<ITextureParameter> textures = sp.Has_Parameters()
+                                ? sp.Parameters.TextureParams : sp.TextureParams;
+                            AddSubProgram(into, sp.BlobIndex, sp.GpuProgramType, -1, sp.KeywordIndices,
+                                Reflection(blobs, sp.BlobIndex, sp.GpuProgramType, -1), common,
+                                textures.Concat(commonTextures), nameByIndex);
+                        }
                     }
                 }
                 catch (Exception e)
@@ -382,12 +448,11 @@ internal static class ShaderModelBridge
         /// <summary>
         /// The parsed reflection for one blob slot, or null when the table cannot be read.
         ///
-        /// <para>Blob index 0 is shared between two stages in some GLSL builds, and every
-        /// platform's blob is scanned in turn, so the first table that yields a program
-        /// with any reflection wins. A slot the platform does not carry simply returns
-        /// null and the decompiler falls back to inference.</para>
+        /// <para>Slot numbers can repeat across platforms, so a candidate must
+        /// also match the serialized GPU program type.</para>
         /// </summary>
-        private static ShaderSubProgram? Reflection(ShaderSubProgramBlob[] blobs, uint blobIndex, int paramIndex)
+        private static ShaderSubProgram? Reflection(ShaderSubProgramBlob[] blobs, uint blobIndex,
+            int programType, int paramIndex)
                 {
                     foreach (ShaderSubProgramBlob blob in blobs)
                     {
@@ -397,7 +462,8 @@ internal static class ShaderModelBridge
                             ShaderSubProgram sub = paramIndex >= 0 && paramIndex < blob.Entries.Length
                                 ? blob.GetSubProgram(blobIndex, (uint)paramIndex)
                                 : blob.GetSubProgram(blobIndex);
-                            if (sub.ConstantBuffers.Length > 0 || sub.TextureParameters.Length > 0)
+                            if (sub.ProgramType == programType &&
+                                (sub.ConstantBuffers.Length > 0 || sub.TextureParameters.Length > 0))
                                 return sub;
                         }
                         catch (Exception e)
@@ -418,19 +484,30 @@ internal static class ShaderModelBridge
         yield return pass.ProgRayTracing;
     }
 
-    private static void AddSubProgram(ShaderPass into, uint blobIndex, int paramIndex,
-            IEnumerable<ushort> keywords, ShaderSubProgram? reflection = null,
-            ShaderConstantBufferInfo? common = null)
+    private static void AddSubProgram(ShaderPass into, uint blobIndex, int programType, int paramIndex,
+            IEnumerable<ushort> keywords, ShaderSubProgram? reflection, ShaderConstantBufferInfo? common,
+            IEnumerable<ITextureParameter> textures, IReadOnlyDictionary<int, string> nameByIndex)
         {
             var info = new ShaderSubProgramInfo
             {
                 BlobIndex = (int)blobIndex,
+                GpuProgramType = programType,
                 ParameterBlobIndex = paramIndex,
             };
             if (keywords != null)
                 foreach (ushort k in keywords) info.KeywordIndices.Add(k);
             if (reflection != null) FillReflection(info, reflection);
             if (common != null) MergeGlobals(info, common);
+            foreach (var texture in textures)
+            {
+                if (!nameByIndex.TryGetValue(texture.NameIndex, out string? name) ||
+                    info.Textures.Any(binding => binding.Index == texture.Index))
+                    continue;
+                info.Textures.Add(new ShaderTextureParam
+                {
+                    Name = name, Index = texture.Index, Sampler = texture.SamplerIndex,
+                });
+            }
 
             // Kept in the asset's own order, one entry per stage slot.  Two stages can
             // name the same blob slot with *different* keyword sets (a GLSL pair shares
@@ -507,7 +584,7 @@ internal static class ShaderModelBridge
                                     $"vectors={sub.VectorParameters.Length} matrices={sub.MatrixParameters.Length} " + string.Join(" | ",
                                     info.ConstantBuffers.Select(c => $"{c.Name}[{string.Join(",", c.Members.Select(m => $"{m.Name}@{m.Offset}"))}]")));
 
-                foreach (TextureParameter t in sub.TextureParameters)
+                foreach (BlobTextureParameter t in sub.TextureParameters)
                 {
                     if (string.IsNullOrEmpty(t.Name)) continue;
                     info.Textures.Add(new ShaderTextureParam

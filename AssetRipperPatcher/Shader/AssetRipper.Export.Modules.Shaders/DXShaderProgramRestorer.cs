@@ -4,6 +4,7 @@ using AssetRipper.Export.Modules.Shaders.Resources;
 using AssetRipper.Export.Modules.Shaders.ShaderBlob;
 using AssetRipper.IO.Endian;
 using AssetRipper.Primitives;
+using ShaderRipper.Data;
 
 namespace AssetRipper.Export.Modules.Shaders;
 
@@ -18,39 +19,69 @@ public static class DXShaderProgramRestorer
 			using MemoryStream dest = new MemoryStream();
 			using BinaryWriter writer = new BinaryWriter(dest);
 			uint baseOffset = (uint)reader.BaseStream.Position;
-			byte[] magicBytes = reader.ReadBytes(4);
-			byte[] checksum = reader.ReadBytes(16);
+			const uint headerSize = 32;
+			uint magic = reader.ReadUInt32();
+			if (magic != 0x43425844) // DXBC
+			{
+				throw new InvalidDataException("Invalid DXBC signature.");
+			}
+			reader.BaseStream.Position += 16; // The checksum is recomputed after writing.
 			uint unknown0 = reader.ReadUInt32();
 			uint totalSize = reader.ReadUInt32();
 			uint chunkCount = reader.ReadUInt32();
+			if (totalSize < headerSize || totalSize > reader.BaseStream.Length - baseOffset
+				|| chunkCount > (totalSize - headerSize) / 4)
+			{
+				throw new InvalidDataException("Invalid DXBC size or chunk count.");
+			}
+			uint bodyStart = headerSize + 4 * chunkCount;
 			List<uint> chunkOffsets = new List<uint>();
 			for (int i = 0; i < chunkCount; i++)
 			{
 				chunkOffsets.Add(reader.ReadUInt32());
 			}
-			uint bodyOffset = (uint)reader.BaseStream.Position;
+			bool hasRdef = false;
 			foreach (uint chunkOffset in chunkOffsets)
 			{
-				reader.BaseStream.Position = chunkOffset + baseOffset;
-				uint fourCc = reader.ReadUInt32();
-				if (fourCc == 1178944594)
+				if (chunkOffset < bodyStart || chunkOffset > totalSize - 8)
 				{
-					reader.BaseStream.Position = baseOffset;
-					return reader.ReadBytes((int)reader.BaseStream.Length);
+					throw new InvalidDataException("Invalid DXBC chunk offset.");
 				}
+				reader.BaseStream.Position = (long)baseOffset + chunkOffset;
+				uint fourCc = reader.ReadUInt32();
+				uint chunkSize = reader.ReadUInt32();
+				if (chunkSize > totalSize - chunkOffset - 8)
+				{
+					throw new InvalidDataException("Invalid DXBC chunk size.");
+				}
+				hasRdef |= fourCc == RDEFFourCC;
 			}
-			reader.BaseStream.Position = bodyOffset;
+			if (hasRdef)
+			{
+				reader.BaseStream.Position = baseOffset;
+				byte[] original = new byte[totalSize];
+				reader.BaseStream.ReadExactly(original);
+				return original;
+			}
+
+			reader.BaseStream.Position = (long)baseOffset + bodyStart;
+			byte[] rest = new byte[totalSize - bodyStart];
+			reader.BaseStream.ReadExactly(rest);
 			byte[] resourceChunkData = GetResourceChunk(version, ref shaderSubProgram);
-			totalSize += (uint)resourceChunkData.Length;
+			// The container grows by the new chunk plus one 4-byte entry in the chunk
+			// offset table.  Counting the chunk twice here (the old code did) leaves
+			// every reader a totalSize that overshoots the real file by almost the
+			// whole RDEF chunk.
+			totalSize += (uint)resourceChunkData.Length + 4;
 			for (int j = 0; j < chunkCount; j++)
 			{
 				chunkOffsets[j] += (uint)resourceChunkData.Length + 4;
 			}
-			chunkOffsets.Insert(0, bodyOffset - baseOffset + 4);
+			chunkOffsets.Insert(0, bodyStart + 4);
 			chunkCount++;
-			totalSize += (uint)resourceChunkData.Length;
-			writer.Write(magicBytes);
-			writer.Write(checksum);
+			writer.Write(magic);
+			writer.Write(0UL);
+			writer.Write(0UL);
 			writer.Write(unknown0);
 			writer.Write(totalSize);
 			writer.Write(chunkCount);
@@ -59,9 +90,10 @@ public static class DXShaderProgramRestorer
 				writer.Write(chunkOffset2);
 			}
 			writer.Write(resourceChunkData);
-			byte[] rest = reader.ReadBytes((int)reader.BaseStream.Length - (int)reader.BaseStream.Position);
 			writer.Write(rest);
-			return dest.ToArray();
+			byte[] restored = dest.ToArray();
+			DxbcChecksum.Update(restored);
+			return restored;
 		}
 	}
 

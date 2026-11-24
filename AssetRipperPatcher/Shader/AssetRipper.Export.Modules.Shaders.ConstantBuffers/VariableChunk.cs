@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using AssetRipper.Export.Modules.Shaders.Extensions;
 using AssetRipper.Export.Modules.Shaders.ShaderBlob.Parameters;
 using AssetRipper.Export.Modules.Shaders.Types;
@@ -64,7 +65,7 @@ internal class VariableChunk
 					StartOffset = (uint)variable.Index,
 					Variable = variable
 				};
-				dataOffset += (uint)variable.Name.Length + 1;
+				dataOffset += (uint)Encoding.UTF8.GetByteCount(variable.Name) + 1;
 				m_typeLookup[variable.ShaderType] = dataOffset;
 				dataOffset += variable.ShaderType.Size();
 				variable.ShaderType.MemberOffset = ((variable.ShaderType.Members.Length != 0) ? dataOffset : 0u);
@@ -73,7 +74,7 @@ internal class VariableChunk
 				foreach (ShaderTypeMember member in members)
 				{
 					m_variableNameLookup[member.Name] = dataOffset;
-					dataOffset += (uint)member.Name.Length + 1;
+					dataOffset += (uint)Encoding.UTF8.GetByteCount(member.Name) + 1;
 					m_typeLookup[member.ShaderType] = dataOffset;
 					dataOffset += member.ShaderType.Size();
 				}

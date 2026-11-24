@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading;
 using AssetRipper.Assets;
 using AssetRipper.Export.Modules.Shaders.Exporters;
 using AssetRipper.Export.Modules.Shaders.Exporters.DirectX;
@@ -35,7 +36,22 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
                                 string path, FileSystem fileSystem)
     {
             Interlocked.Increment(ref _calls);
-            if (TryProduce(asset, out string? text))
+            bool produced = TryProduce(asset, out string? text, out ShaderResult? result, AppState.ShaderAsm);
+            if (AppState.ShaderAsm && asset is IShader shader)
+            {
+                // 原始产物与反编译结果互不影响：即使翻译失败、退回 GLSL 文本，
+                // 这份字节/文本仍然值得保留下来。
+                try
+                {
+                    ShaderAsmExporter.Export(shader, path, fileSystem, result?.DxbcPrograms);
+                }
+                catch (Exception e)
+                {
+                    ShaderAsmExporter.Fail(shader.Name, "export", e);
+                }
+            }
+
+            if (produced)
             {
                 using Stream stream = fileSystem.File.Create(path);
                 using var writer = new StreamWriter(stream, new UTF8Encoding(false));
@@ -58,7 +74,7 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
         /// <returns>成功时返回文本；两条路径都失败时返回 null。</returns>
         public static string? TryDecompile(IUnityObjectBase asset)
         {
-            return TryProduce(asset, out string? text) ? text : null;
+        return TryProduce(asset, out string? text, out _) ? text : null;
         }
 
         /// <summary>
@@ -67,9 +83,11 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
         /// rendered into memory as the fallback, matching what
         /// <see cref="Fallback"/> would have written to disk.
         /// </summary>
-        private static bool TryProduce(IUnityObjectBase asset, out string? text)
+        private static bool TryProduce(IUnityObjectBase asset, out string? text,
+            out ShaderResult? result, bool includeDxbc = false)
         {
             text = null;
+            result = null;
             if (asset is not IShader shader)
                 return false;
 
@@ -82,7 +100,7 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
                 }
                 else
                 {
-                    ShaderResult result = ShaderDecompiler.Translate(model);
+                    result = ShaderDecompiler.Translate(model, includeDxbc);
                     if (result.Ok && !string.IsNullOrEmpty(result.ShaderLab))
                     {
                         text = result.ShaderLab;
@@ -120,6 +138,10 @@ public sealed class ShaderRipperExporter : ShaderExporterBase
             {
                 Console.WriteLine($"[ShaderRipper] export tally: calls={_calls} ok={_ok} " +
                                   $"fallback={_fallback} nullModel={_nullModel} threw={_threw}");
+                if (AppState.ShaderAsm)
+                {
+                    ShaderAsmExporter.ReportTally();
+                }
             }
 
     /// <summary>

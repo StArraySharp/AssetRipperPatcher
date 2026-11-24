@@ -86,11 +86,24 @@ public sealed class ShaderSubProgramBlob
 		{
 			return subProgram;
 		}
-		using MemoryStream blobMem = new MemoryStream(m_decompressedBlobSegments[Entries[blobIndex].Segment]);
-		using AssetReader blobReader = new AssetReader(blobMem, m_shaderCollection);
 		subProgram = new ShaderSubProgram();
-		ReadSubProgram(blobReader, subProgram, blobIndex, readProgramData: true, readParams: true);
+		ReadSubProgram(subProgram, blobIndex, readProgramData: true, readParams: true);
 		m_cachedSubPrograms.TryAdd((blobIndex, blobIndex), subProgram);
+		return subProgram;
+	}
+
+	/// <summary>
+	/// Read only the program payload, without touching the parameter table.
+	///
+	/// <para>Unity 6 stores a variant's reflection in a separate blob entry, so the
+	/// combined read (<see cref="GetSubProgram(uint)"/>) can fail even though the
+	/// DXBC/GLSL bytes are perfectly readable.  The binary export only needs the
+	/// payload in that case; the reflection is best-effort.</para>
+	/// </summary>
+	public ShaderSubProgram GetSubProgramData(uint blobIndex)
+	{
+		ShaderSubProgram subProgram = new ShaderSubProgram();
+		ReadSubProgram(subProgram, blobIndex, readProgramData: true, readParams: false, allowTrailingParameters: true);
 		return subProgram;
 	}
 
@@ -100,26 +113,29 @@ public sealed class ShaderSubProgramBlob
 		{
 			return subProgram;
 		}
-		using MemoryStream blobMem = new MemoryStream(m_decompressedBlobSegments[Entries[blobIndex].Segment]);
-		using AssetReader blobReader = new AssetReader(blobMem, m_shaderCollection);
 		subProgram = new ShaderSubProgram();
-		ReadSubProgram(blobReader, subProgram, blobIndex, readProgramData: true, readParams: false);
-		ReadSubProgram(blobReader, subProgram, paramBlobIndex, readProgramData: false, readParams: true);
+		ReadSubProgram(subProgram, blobIndex, readProgramData: true, readParams: false);
+		ReadSubProgram(subProgram, paramBlobIndex, readProgramData: false, readParams: true);
 		m_cachedSubPrograms.TryAdd((blobIndex, paramBlobIndex), subProgram);
 		return subProgram;
 	}
 
-	private void ReadSubProgram(AssetReader reader, ShaderSubProgram subProgram, uint index, bool readProgramData, bool readParams)
+	private void ReadSubProgram(ShaderSubProgram subProgram, uint index, bool readProgramData, bool readParams, bool allowTrailingParameters = false)
 	{
 		ShaderSubProgramEntry entry = Entries[index];
-		reader.BaseStream.Position = entry.Offset;
-		subProgram.Read(reader, readProgramData, readParams);
-		checked
+		using MemoryStream blobMem = new MemoryStream(m_decompressedBlobSegments[entry.Segment], writable: false);
+		long end = (long)entry.Offset + entry.Length;
+		if (entry.Offset < 0 || entry.Length < 0 || end > blobMem.Length)
 		{
-			if (reader.BaseStream.Position != entry.Offset + entry.Length)
-			{
-				throw new Exception($"Read {reader.BaseStream.Position - entry.Offset} less than expected {entry.Length}");
-			}
+			throw new InvalidDataException($"Shader blob entry {index} lies outside segment {entry.Segment}.");
+		}
+
+		using AssetReader reader = new AssetReader(blobMem, m_shaderCollection);
+		blobMem.Position = entry.Offset;
+		subProgram.Read(reader, readProgramData, readParams);
+		if (blobMem.Position > end || (!allowTrailingParameters && blobMem.Position != end))
+		{
+			throw new InvalidDataException($"Shader blob entry {index}: read {blobMem.Position - entry.Offset} bytes, expected {entry.Length}.");
 		}
 	}
 }

@@ -29,6 +29,8 @@ internal static class AppState
     /// </summary>
     public static bool StrictOnly;
 
+    public static bool ShaderAsm;
+
     /// <summary>
     /// <c>--remove-packaged-dlls</c>：删掉「其实是 UPM 包产物」的裸 DLL。
     ///
