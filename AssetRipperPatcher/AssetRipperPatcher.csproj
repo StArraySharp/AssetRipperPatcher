@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <Version>1.0.1</Version>
-                <AssemblyVersion>1.0.1.0</AssemblyVersion>
-                <FileVersion>1.0.1.0</FileVersion>
+        <Version>1.0.2</Version>
+                <AssemblyVersion>1.0.2.0</AssemblyVersion>
+                <FileVersion>1.0.2.0</FileVersion>
         <Product>AssetRipperPatcher</Product>
         <Description>Export enhancements for AssetRipper: shader decompilation, sprite mesh/outline repair, alpha textures, legacy fonts.</Description>
     </PropertyGroup>
@@ -77,7 +77,7 @@
       <ProjectReference Include="..\AssetRipper\Source\AssetRipper.GUI.Web\AssetRipper.GUI.Web.csproj" />
       <!-- The decompiler library, referenced so the patcher can call it in-process
                  instead of spawning ShaderRipper.exe and reading files back.
-                 ShaderRipper is a git submodule pinned to tag v1.2.2. -->
+                 ShaderRipper is a git submodule pinned to tag v1.2.4. -->
             <ProjectReference Include="..\ShaderRipper\src\ShaderRipper\ShaderRipper.csproj" />
     </ItemGroup>
 

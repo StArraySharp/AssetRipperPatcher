@@ -62,7 +62,7 @@ serves is the game the user just pointed it at.
 ```json
 {
   "app": "AssetRipperPatcher",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "unityVersion": "6000.3.21f1",
   "loaded": true,
   "exporting": false,

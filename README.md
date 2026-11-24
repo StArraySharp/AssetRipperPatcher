@@ -88,7 +88,7 @@ dotnet test  AssetRipperPatcher.slnx
 依赖两个同级目录的仓库（都以 git submodule 引入，克隆后需要 `git submodule update --init --recursive`）：
 
 - `AssetRipper/` —— 上游本体，pin 在 2.0.0
-- `ShaderRipper/` —— shader 反编译器，pin 在 tag `v1.2.2`
+- `ShaderRipper/` —— shader 反编译器，pin 在 tag `v1.2.4`
 
 ## 结构
 
